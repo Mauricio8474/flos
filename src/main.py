@@ -24,7 +24,7 @@ from src.infrastructure.auth import (
 )
 
 from src.domain.models import ComponenteFormula, Formula
-from src.domain.services import CalculadorMRP
+from src.domain.services import CalculadorMRP, MaterialNoEncontradoError
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
@@ -351,7 +351,10 @@ def calcular_explosion(id_formula: str = Form(...), cantidad_a_producir_kg: floa
     if not formula:
         return [{"error": f"Formula '{id_formula}' no encontrada"}]
     inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    return [{"sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto} for r in CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)]
+    try:
+        return [{"sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto} for r in CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)]
+    except MaterialNoEncontradoError as e:
+        return [{"error": str(e)}]
 
 
 @app.post("/produccion/calcular-explosion/batch", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
@@ -364,8 +367,11 @@ def calcular_explosion_batch(ordenes: list[OrdenBatch]) -> list[dict]:
         if not formula:
             resultados.append({"orden": orden.id_formula, "error": "Formula no encontrada"})
             continue
-        for r in CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario):
-            resultados.append({"orden": orden.id_formula, "sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto})
+        try:
+            for r in CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario):
+                resultados.append({"orden": orden.id_formula, "sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto})
+        except MaterialNoEncontradoError as e:
+            resultados.append({"orden": orden.id_formula, "error": str(e)})
     return resultados
 
 
@@ -408,8 +414,11 @@ def calcular_explosion_batch_excel(
         if not formula:
             resultados.append({"orden": orden["id_formula"], "error": "Formula no encontrada"})
             continue
-        for r in CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario):
-            resultados.append({"orden": orden["id_formula"], "sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto})
+        try:
+            for r in CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario):
+                resultados.append({"orden": orden["id_formula"], "sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto})
+        except MaterialNoEncontradoError as e:
+            resultados.append({"orden": orden["id_formula"], "error": str(e)})
     return resultados
 
 
@@ -454,13 +463,21 @@ def _generar_pdf_resultados(resultados, id_formula, cantidad) -> StreamingRespon
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=explosion_{id_formula}.pdf"})
 
 
+def _explosion_resultados(formula, cantidad, inventario):
+    try:
+        return CalculadorMRP.calcular_explosion(formula, cantidad, inventario), None
+    except MaterialNoEncontradoError as e:
+        return None, str(e)
+
+
 @app.post("/produccion/calcular-explosion/excel", dependencies=[Depends(requerir_rol("admin", "ingenieria", "almacen", "produccion"))])
 def calcular_explosion_excel(id_formula: str = Form(...), cantidad_a_producir_kg: float = Form(...)) -> StreamingResponse:
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
+    resultados, err = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    if err:
+        return StreamingResponse(iter([err.encode()]), media_type="text/plain", status_code=404)
     return _generar_excel_resultados(resultados, id_formula)
 
 
@@ -469,8 +486,9 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
+    resultados, err = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    if err:
+        return StreamingResponse(iter([err.encode()]), media_type="text/plain", status_code=404)
     return _generar_pdf_resultados(resultados, id_formula, cantidad_a_producir_kg)
 
 
