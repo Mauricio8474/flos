@@ -261,7 +261,7 @@ function api(path, opts={}) {
   return fetch(path, opts).then(r => {
     if (r.status === 401) { logout(); throw new Error('Sesión expirada'); }
     return r.json().catch(() => ({error: r.statusText}));
-  });
+  }).catch(() => ({error: 'Error de conexión'}));
 }
 
 function login() {
@@ -282,8 +282,7 @@ function login() {
     document.getElementById('user-name').textContent = d.nombre;
     document.getElementById('user-rol-badge').textContent = d.rol;
     ajustarUIPorRol();
-    cargarDashboard(); cargarFormulas(); cargarInventario();
-    cargarSelectorFormulas(); cargarAuditoria(); cargarUsuarios();
+    showTab('dashboard');
   }).catch(() => { errEl.textContent = 'Error de conexión'; errEl.style.display = ''; });
 }
 
@@ -310,13 +309,19 @@ function showTab(name) {
   document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
   document.querySelector(`nav button[onclick*="'${name}'"]`)?.classList.add('active');
   document.getElementById(`tab-${name}`)?.classList.add('active');
+  if (name === 'formulas') cargarFormulas();
+  else if (name === 'inventario') cargarInventario();
+  else if (name === 'explosion') { cargarSelectorFormulas(); }
+  else if (name === 'auditoria') cargarAuditoria();
+  else if (name === 'usuarios') cargarUsuarios();
+  else if (name === 'dashboard') cargarDashboard();
 }
 
 // --- DASHBOARD ---
 function cargarDashboard() {
   Promise.all([api('/produccion/formulas'), api('/produccion/inventario')]).then(([formulas, inv]) => {
     const nf = Array.isArray(formulas) ? formulas.length : 0;
-    const ni = inv && typeof inv === 'object' ? Object.keys(inv).length : 0;
+    const ni = Array.isArray(inv) ? inv.length : 0;
     document.getElementById('dashboard-resumen').innerHTML =
       `<div class="card" style="flex:1;min-width:200px"><h3>${nf}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>` +
       `<div class="card" style="flex:1;min-width:200px"><h3>${ni}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>`;
@@ -329,6 +334,7 @@ function cargarFormulas() {
   document.getElementById('tabla-formulas').style.display = 'none';
   api('/produccion/formulas').then(data => {
     el.style.display = 'none';
+    if (data.error) { el.textContent = 'Error al cargar fórmulas'; return; }
     if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay fórmulas registradas.'; return; }
     document.getElementById('tabla-formulas').style.display = '';
     const puedeEditar = ['admin','ingenieria'].includes(USUARIO.rol);
@@ -436,6 +442,7 @@ function cargarInventario() {
   document.getElementById('tabla-inventario').style.display = 'none';
   api('/produccion/inventario').then(data => {
     el.style.display = 'none';
+    if (data.error) { el.textContent = 'Error al cargar inventario'; return; }
     if (!data || !data.length) { el.textContent = 'Inventario vacío.'; return; }
     document.getElementById('tabla-inventario').style.display = '';
     data.sort((a,b) => a.sku.localeCompare(b.sku));
