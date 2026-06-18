@@ -30,6 +30,8 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://flos_admin:flos_secure_password@flos-db:5432/flos_core"
     depends_on:
       flos-db:
         condition: service_healthy
