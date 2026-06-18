@@ -83,21 +83,48 @@ Ejecuta el cálculo de explosión de materiales. **No necesita archivo Excel** �
 | `id_formula` | string | ID de la fórmula en BD |
 | `cantidad_a_producir_kg` | float | Cantidad a producir |
 
+### `POST /produccion/calcular-explosion/batch`
+
+Ejecuta múltiples explosiones en una sola llamada.
+
+```json
+[
+  {"id_formula": "AMC2705", "cantidad": 100},
+  {"id_formula": "AM2494", "cantidad": 50}
+]
+```
+
+### `POST /produccion/calcular-explosion/excel`
+
+Descarga el resultado como archivo `.xlsx`.
+
+### `POST /produccion/calcular-explosion/pdf`
+
+Descarga el resultado como archivo `.pdf`.
+
+### `GET /produccion/auditoria`
+
+Consulta el historial de cambios en fórmulas e inventario.
+
 ## Flujo de trabajo
 
 ```bash
 # 1. Cargar fórmulas desde Excel a la BD
-curl -X POST http://localhost:8000/produccion/cargar-formulas
+curl -X POST http://localhost:8000/produccion/cargar-formulas \
+  -H "X-API-Key: flos-dev-key-2026"
 
 # 2. Cargar inventario desde Excel a la BD
 curl -X POST http://localhost:8000/produccion/cargar-inventario \
+  -H "X-API-Key: flos-dev-key-2026" \
   -F "archivo=@inventario.xlsx"
 
 # 3. Consultar fórmulas disponibles
-curl http://localhost:8000/produccion/formulas
+curl http://localhost:8000/produccion/formulas \
+  -H "X-API-Key: flos-dev-key-2026"
 
 # 4. Ejecutar explosión
 curl -X POST http://localhost:8000/produccion/calcular-explosion \
+  -H "X-API-Key: flos-dev-key-2026" \
   -d "id_formula=AMC2705&cantidad_a_producir_kg=100"
 ```
 
