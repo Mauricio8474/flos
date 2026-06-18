@@ -4,9 +4,11 @@ from tempfile import NamedTemporaryFile
 
 import openpyxl
 import uvicorn
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from src.infrastructure.auth import verificar_api_key
 
 from src.domain.models import ComponenteFormula, Formula
 from src.domain.services import CalculadorMRP
@@ -50,7 +52,7 @@ def _repo_inventario() -> PostgresRepositorioInventario:
     return app.state.repo_inventario
 
 
-@app.get("/produccion/formulas")
+@app.get("/produccion/formulas", dependencies=[Depends(verificar_api_key)])
 def listar_formulas() -> list[dict]:
     todas = _repo_formula().listar()
     return [
@@ -65,7 +67,7 @@ def listar_formulas() -> list[dict]:
     ]
 
 
-@app.get("/produccion/formulas/{id_formula}")
+@app.get("/produccion/formulas/{id_formula}", dependencies=[Depends(verificar_api_key)])
 def obtener_formula(id_formula: str) -> dict:
     f = _repo_formula().obtener(id_formula)
     if not f:
@@ -79,7 +81,7 @@ def obtener_formula(id_formula: str) -> dict:
     }
 
 
-@app.post("/produccion/formulas")
+@app.post("/produccion/formulas", dependencies=[Depends(verificar_api_key)])
 def crear_formula(body: FormulaInput) -> dict:
     repo = _repo_formula()
     if repo.obtener(body.id):
@@ -96,7 +98,7 @@ def crear_formula(body: FormulaInput) -> dict:
     return {"mensaje": f"Formula '{body.id}' creada", "componentes": len(body.componentes)}
 
 
-@app.put("/produccion/formulas/{id_formula}")
+@app.put("/produccion/formulas/{id_formula}", dependencies=[Depends(verificar_api_key)])
 def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
     repo = _repo_formula()
     if not repo.obtener(id_formula):
@@ -113,14 +115,14 @@ def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
     return {"mensaje": f"Formula '{id_formula}' actualizada", "componentes": len(body.componentes)}
 
 
-@app.delete("/produccion/formulas/{id_formula}")
+@app.delete("/produccion/formulas/{id_formula}", dependencies=[Depends(verificar_api_key)])
 def eliminar_formula(id_formula: str) -> dict:
     if _repo_formula().eliminar(id_formula):
         return {"mensaje": f"Formula '{id_formula}' eliminada"}
     return {"error": f"Formula '{id_formula}' no encontrada"}
 
 
-@app.post("/produccion/cargar-formulas")
+@app.post("/produccion/cargar-formulas", dependencies=[Depends(verificar_api_key)])
 def cargar_formulas() -> dict:
     adapter = ExcelFormulasAdapter()
     formulas = adapter.leer_formulas("formulas.xlsx")
@@ -130,7 +132,7 @@ def cargar_formulas() -> dict:
     return {"mensaje": f"{len(formulas)} formulas cargadas desde formulas.xlsx"}
 
 
-@app.post("/produccion/cargar-inventario")
+@app.post("/produccion/cargar-inventario", dependencies=[Depends(verificar_api_key)])
 def cargar_inventario(archivo: UploadFile = File(...)) -> dict:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
@@ -142,12 +144,12 @@ def cargar_inventario(archivo: UploadFile = File(...)) -> dict:
     return {"mensaje": f"Inventario actualizado: {len(inventario)} SKUs"}
 
 
-@app.get("/produccion/inventario")
+@app.get("/produccion/inventario", dependencies=[Depends(verificar_api_key)])
 def obtener_inventario() -> dict[str, float]:
     return _repo_inventario().obtener_todos()
 
 
-@app.post("/produccion/calcular-explosion")
+@app.post("/produccion/calcular-explosion", dependencies=[Depends(verificar_api_key)])
 def calcular_explosion(
     id_formula: str = Form(...),
     cantidad_a_producir_kg: float = Form(...),
@@ -175,7 +177,7 @@ def calcular_explosion(
     ]
 
 
-@app.post("/produccion/calcular-explosion/excel")
+@app.post("/produccion/calcular-explosion/excel", dependencies=[Depends(verificar_api_key)])
 def calcular_explosion_excel(
     id_formula: str = Form(...),
     cantidad_a_producir_kg: float = Form(...),
