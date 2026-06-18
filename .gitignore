@@ -5,3 +5,5 @@ __pycache__/
 venv/
 .venv/
 *_prueba.xlsx
+*_real.xlsx
+_test_*.py
