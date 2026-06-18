@@ -1,12 +1,13 @@
 ﻿import io
 import logging
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import openpyxl
 import uvicorn
 from fastapi import Depends, FastAPI, File, Form, Security, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -40,6 +41,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/dashboard/")
+
+
+@app.get("/dashboard/{rest:path}")
+def dashboard():
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
 class ComponenteInput(BaseModel):

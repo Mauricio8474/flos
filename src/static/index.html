@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flos MES - Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+body { background: #f0f2f5; color: #333; }
+header { background: #1a237e; color: #fff; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+header h1 { font-size: 1.3rem; }
+nav { background: #283593; padding: 0 2rem; display: flex; gap: 0.5rem; }
+nav button { background: transparent; color: #c5cae9; border: none; padding: 0.75rem 1.2rem; cursor: pointer; font-size: 0.9rem; border-bottom: 3px solid transparent; }
+nav button:hover { color: #fff; background: rgba(255,255,255,0.05); }
+nav button.active { color: #fff; border-bottom-color: #ffd54f; }
+main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+section { display: none; }
+section.active { display: block; }
+.card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.card h2 { margin-bottom: 1rem; font-size: 1.1rem; color: #1a237e; }
+.form-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
+.form-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.form-group label { font-size: 0.8rem; color: #666; font-weight: 500; }
+.form-group input, .form-group select { padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; min-width: 180px; }
+.form-group input:focus { outline: none; border-color: #1a237e; }
+button, .btn { background: #1a237e; color: #fff; border: none; padding: 0.5rem 1.2rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; white-space: nowrap; }
+button:hover { background: #283593; }
+button.danger { background: #c62828; }
+button.danger:hover { background: #e53935; }
+button.success { background: #2e7d32; }
+button.success:hover { background: #43a047; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th { background: #1a237e; color: #fff; padding: 0.6rem; text-align: left; font-weight: 500; }
+td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #e0e0e0; }
+tr:hover td { background: #f5f5f5; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+.badge.ok { background: #c8e6c9; color: #2e7d32; }
+.badge.fail { background: #ffcdd2; color: #c62828; }
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+.modal.open { display: flex; }
+.modal-content { background: #fff; border-radius: 8px; padding: 2rem; width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto; }
+.modal-content h2 { margin-bottom: 1rem; }
+.modal-actions { display: flex; gap: 0.5rem; justify-content: end; margin-top: 1rem; }
+.comp-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
+.comp-row input { flex: 1; }
+.comp-row button { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+.toast { position: fixed; top: 20px; right: 20px; padding: 0.8rem 1.5rem; border-radius: 4px; color: #fff; z-index: 2000; display: none; }
+.toast.show { display: block; }
+.toast.info { background: #1a237e; }
+.toast.error { background: #c62828; }
+.toast.success { background: #2e7d32; }
+.empty { text-align: center; padding: 2rem; color: #999; }
+#login-screen { display: flex; justify-content: center; align-items: center; height: 100vh; }
+#login-screen .card { width: 400px; }
+.login-header { text-align: center; margin-bottom: 1.5rem; }
+.login-header h2 { color: #1a237e; }
+.login-header p { color: #666; font-size: 0.9rem; }
+#app-screen { display: none; }
+#app-screen.active { display: block; }
+input[type="file"] { padding: 0.4rem; }
+.pagination { display: flex; gap: 0.3rem; justify-content: center; margin-top: 1rem; }
+.pagination button { padding: 0.3rem 0.7rem; font-size: 0.8rem; background: #e0e0e0; color: #333; }
+.pagination button.active { background: #1a237e; color: #fff; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="card">
+    <div class="login-header">
+      <h2>Flos MES</h2>
+      <p>Manufacturing Execution System</p>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>API Key</label>
+      <input type="password" id="api-key-input" placeholder="Ingrese su API Key" style="width:100%">
+    </div>
+    <button onclick="login()" style="width:100%">Ingresar</button>
+  </div>
+</div>
+
+<div id="app-screen">
+<header>
+  <h1>Flos MES</h1>
+  <span id="user-badge" style="font-size:0.8rem;opacity:0.8"></span>
+</header>
+<nav>
+  <button class="active" onclick="showTab('dashboard')">Dashboard</button>
+  <button onclick="showTab('formulas')">Fórmulas</button>
+  <button onclick="showTab('inventario')">Inventario</button>
+  <button onclick="showTab('explosion')">Explosión</button>
+  <button onclick="showTab('auditoria')">Auditoría</button>
+</nav>
+<main>
+
+<section id="tab-dashboard" class="active">
+  <div class="card">
+    <h2>Resumen</h2>
+    <div id="dashboard-resumen" style="display:flex;gap:1rem;flex-wrap:wrap">Cargando...</div>
+  </div>
+  <div class="card">
+    <h2>Últimas explosiones</h2>
+    <div id="dashboard-ultimos">Seleccione una opción del menú para comenzar.</div>
+  </div>
+</section>
+
+<section id="tab-formulas">
+  <div class="card">
+    <h2>Fórmulas</h2>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+      <button onclick="abrirModalFormula()">+ Nueva fórmula</button>
+      <button class="success" onclick="cargarFormulasExcel()">Cargar desde Excel</button>
+    </div>
+    <div id="loading-formulas" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-formulas" style="display:none">
+      <thead><tr><th>ID</th><th>Nombre</th><th>Componentes</th><th>Acciones</th></tr></thead>
+      <tbody id="tbody-formulas"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-inventario">
+  <div class="card">
+    <h2>Cargar inventario</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Archivo Excel (.xlsx)</label>
+        <input type="file" id="inv-file" accept=".xlsx">
+      </div>
+      <button onclick="subirInventario()">Cargar</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Inventario actual</h2>
+    <div id="loading-inventario" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-inventario" style="display:none">
+      <thead><tr><th>SKU</th><th>Cantidad (kg)</th></tr></thead>
+      <tbody id="tbody-inventario"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-explosion">
+  <div class="card">
+    <h2>Calcular explosión simple</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Fórmula</label>
+        <select id="explosion-formula"></select>
+      </div>
+      <div class="form-group">
+        <label>Cantidad (kg)</label>
+        <input type="number" id="explosion-cantidad" value="100" min="1" step="0.1">
+      </div>
+      <button onclick="calcularExplosion()">Calcular</button>
+      <button class="success" onclick="descargarExcel()">Descargar Excel</button>
+      <button class="success" onclick="descargarPDF()">Descargar PDF</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Explosión batch</h2>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+      <div class="form-group" style="flex:1">
+        <label>Órdenes (JSON)</label>
+        <textarea id="batch-input" rows="4" style="width:100%;padding:0.5rem;font-family:monospace;font-size:0.85rem;border:1px solid #ccc;border-radius:4px">[{"id_formula": "AMC2705", "cantidad": 100}]</textarea>
+      </div>
+    </div>
+    <button onclick="calcularBatch()">Ejecutar batch</button>
+  </div>
+  <div id="resultado-explosion" style="display:none">
+    <div class="card">
+      <h2>Resultados</h2>
+      <table>
+        <thead><tr><th>SKU</th><th>Requerido (kg)</th><th>Disponible (kg)</th><th>Faltante (kg)</th><th>Estado</th></tr></thead>
+        <tbody id="tbody-resultados"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="tab-auditoria">
+  <div class="card">
+    <h2>Auditoría</h2>
+    <div id="loading-auditoria" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-auditoria" style="display:none">
+      <thead><tr><th>ID</th><th>Entidad</th><th>Acción</th><th>Detalle</th><th>Usuario</th><th>Fecha</th></tr></thead>
+      <tbody id="tbody-auditoria"></tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="modal-formula">
+  <div class="modal-content">
+    <h2 id="modal-formula-title">Nueva fórmula</h2>
+    <input type="hidden" id="formula-edit-id">
+    <div class="form-group" style="margin-bottom:0.8rem">
+      <label>ID</label>
+      <input type="text" id="formula-id" placeholder="F-001">
+    </div>
+    <div class="form-group" style="margin-bottom:0.8rem">
+      <label>Nombre</label>
+      <input type="text" id="formula-nombre" placeholder="Mi fórmula">
+    </div>
+    <h3 style="font-size:0.9rem;margin-bottom:0.5rem;color:#1a237e">Componentes</h3>
+    <div id="componentes-list"></div>
+    <button onclick="agregarComponente()" style="background:#546e7a;font-size:0.8rem;margin-top:0.3rem">+ Agregar componente</button>
+    <div class="modal-actions">
+      <button onclick="cerrarModal('modal-formula')">Cancelar</button>
+      <button class="success" onclick="guardarFormula()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let API_KEY = '';
+
+function toast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function api(path, opts={}) {
+  opts.headers = { ...opts.headers, 'X-API-Key': API_KEY };
+  if (!(opts.body instanceof FormData)) {
+    opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+  }
+  return fetch(path, opts).then(r => r.json().catch(() => ({error: r.statusText})));
+}
+
+function login() {
+  const k = document.getElementById('api-key-input').value;
+  if (!k) { toast('Ingrese una API Key', 'error'); return; }
+  API_KEY = k;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').classList.add('active');
+  document.getElementById('user-badge').textContent = `API Key: ${k.slice(0,8)}...`;
+  cargarDashboard();
+  cargarFormulas();
+  cargarInventario();
+  cargarSelectorFormulas();
+  cargarAuditoria();
+}
+
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+  document.querySelector(`nav button[onclick*="${name}"]`)?.classList.add('active');
+  document.getElementById(`tab-${name}`)?.classList.add('active');
+}
+
+// --- DASHBOARD ---
+function cargarDashboard() {
+  Promise.all([
+    api('/produccion/formulas'),
+    api('/produccion/inventario'),
+  ]).then(([formulas, inventario]) => {
+    const numFormulas = Array.isArray(formulas) ? formulas.length : 0;
+    const numSKUs = inventario && typeof inventario === 'object' ? Object.keys(inventario).length : 0;
+    document.getElementById('dashboard-resumen').innerHTML = `
+      <div class="card" style="flex:1;min-width:200px"><h3>${numFormulas}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>
+      <div class="card" style="flex:1;min-width:200px"><h3>${numSKUs}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>
+    `;
+  });
+}
+
+// --- FORMULAS ---
+function cargarFormulas() {
+  document.getElementById('loading-formulas').style.display = 'block';
+  document.getElementById('tabla-formulas').style.display = 'none';
+  api('/produccion/formulas').then(data => {
+    document.getElementById('loading-formulas').style.display = 'none';
+    if (!Array.isArray(data) || data.length === 0) {
+      document.getElementById('loading-formulas').textContent = 'No hay fórmulas registradas.';
+      return;
+    }
+    document.getElementById('tabla-formulas').style.display = '';
+    document.getElementById('tbody-formulas').innerHTML = data.map(f => `
+      <tr>
+        <td><strong>${f.id}</strong></td>
+        <td>${f.nombre}</td>
+        <td>${f.componentes.length} componentes</td>
+        <td style="display:flex;gap:0.3rem">
+          <button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button>
+          <button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button>
+        </td>
+      </tr>
+    `).join('');
+  });
+}
+
+function cargarSelectorFormulas() {
+  api('/produccion/formulas').then(data => {
+    const sel = document.getElementById('explosion-formula');
+    if (Array.isArray(data)) {
+      sel.innerHTML = data.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
+    }
+  });
+}
+
+function abrirModalFormula(data) {
+  document.getElementById('formula-edit-id').value = data ? data.id : '';
+  document.getElementById('formula-id').value = data ? data.id : '';
+  document.getElementById('formula-id').readOnly = !!data;
+  document.getElementById('formula-nombre').value = data ? data.nombre : '';
+  document.getElementById('modal-formula-title').textContent = data ? 'Editar fórmula' : 'Nueva fórmula';
+  document.getElementById('componentes-list').innerHTML = '';
+  if (data && data.componentes) {
+    data.componentes.forEach(c => agregarComponente(c.sku, c.porcentaje));
+  } else {
+    agregarComponente();
+  }
+  document.getElementById('modal-formula').classList.add('open');
+}
+
+function editarFormula(id) {
+  api(`/produccion/formulas/${id}`).then(f => {
+    if (f.error) { toast(f.error, 'error'); return; }
+    abrirModalFormula(f);
+  });
+}
+
+function agregarComponente(sku='', pct='') {
+  const d = document.getElementById('componentes-list');
+  const i = d.children.length;
+  const div = document.createElement('div');
+  div.className = 'comp-row';
+  div.innerHTML = `
+    <input type="text" placeholder="SKU" value="${sku}" class="comp-sku">
+    <input type="number" placeholder="%" value="${pct}" class="comp-pct" step="0.01" min="0" max="100" style="width:80px">
+    <button class="danger" onclick="this.parentElement.remove()" style="font-size:0.8rem">X</button>`;
+  d.appendChild(div);
+}
+
+function guardarFormula() {
+  const id = document.getElementById('formula-id').value.trim();
+  const nombre = document.getElementById('formula-nombre').value.trim();
+  if (!id || !nombre) { toast('ID y nombre requeridos', 'error'); return; }
+
+  const comps = [];
+  document.querySelectorAll('.comp-row').forEach(row => {
+    const sku = row.querySelector('.comp-sku').value.trim();
+    const pct = parseFloat(row.querySelector('.comp-pct').value);
+    if (sku && !isNaN(pct)) comps.push({sku, porcentaje: pct});
+  });
+  if (comps.length === 0) { toast('Agregue al menos un componente', 'error'); return; }
+
+  const body = JSON.stringify({id, nombre, componentes: comps});
+  const editId = document.getElementById('formula-edit-id').value;
+  const method = editId ? 'PUT' : 'POST';
+  const url = editId ? `/produccion/formulas/${editId}` : '/produccion/formulas';
+
+  fetch(url, {method, headers: {'Content-Type':'application/json','X-API-Key':API_KEY}, body})
+    .then(r => r.json()).then(d => {
+      if (d.error) { toast(d.error, 'error'); return; }
+      toast(d.mensaje, 'success');
+      cerrarModal('modal-formula');
+      cargarFormulas();
+      cargarSelectorFormulas();
+    });
+}
+
+function eliminarFormula(id) {
+  if (!confirm(`Eliminar fórmula ${id}?`)) return;
+  fetch(`/produccion/formulas/${id}`, {method:'DELETE', headers:{'X-API-Key':API_KEY}})
+    .then(r => r.json()).then(d => {
+      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
+      cargarFormulas();
+      cargarSelectorFormulas();
+    });
+}
+
+function cargarFormulasExcel() {
+  fetch('/produccion/cargar-formulas', {method:'POST', headers:{'X-API-Key':API_KEY}})
+    .then(r => r.json()).then(d => {
+      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
+      cargarFormulas();
+      cargarSelectorFormulas();
+    });
+}
+
+// --- INVENTARIO ---
+function cargarInventario() {
+  document.getElementById('loading-inventario').style.display = 'block';
+  document.getElementById('tabla-inventario').style.display = 'none';
+  api('/produccion/inventario').then(data => {
+    document.getElementById('loading-inventario').style.display = 'none';
+    if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+      document.getElementById('loading-inventario').textContent = 'Inventario vacío. Cargue un archivo Excel.';
+      return;
+    }
+    document.getElementById('tabla-inventario').style.display = '';
+    document.getElementById('tbody-inventario').innerHTML = Object.entries(data)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([sku, cant]) => `<tr><td>${sku}</td><td>${cant} kg</td></tr>`).join('');
+  });
+}
+
+function subirInventario() {
+  const file = document.getElementById('inv-file').files[0];
+  if (!file) { toast('Seleccione un archivo Excel', 'error'); return; }
+  const fd = new FormData(); fd.append('archivo', file);
+  fetch('/produccion/cargar-inventario', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
+    .then(r => r.json()).then(d => {
+      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
+      cargarInventario();
+    });
+}
+
+// --- EXPLOSION ---
+function calcularExplosion() {
+  const id = document.getElementById('explosion-formula').value;
+  const cant = document.getElementById('explosion-cantidad').value;
+  if (!id) { toast('Seleccione una fórmula', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('id_formula', id);
+  fd.append('cantidad_a_producir_kg', cant);
+
+  fetch('/produccion/calcular-explosion', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
+    .then(r => r.json()).then(data => {
+      if (!Array.isArray(data)) { toast('Error al calcular', 'error'); return; }
+      if (data[0]?.error) { toast(data[0].error, 'error'); return; }
+      document.getElementById('resultado-explosion').style.display = '';
+      document.getElementById('tbody-resultados').innerHTML = data.map(r => `
+        <tr>
+          <td>${r.sku}</td>
+          <td>${r.requerido_kg} kg</td>
+          <td>${r.disponible_kg} kg</td>
+          <td>${r.faltante_kg} kg</td>
+          <td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td>
+        </tr>
+      `).join('');
+    });
+}
+
+function descargarExcel() {
+  const id = document.getElementById('explosion-formula').value;
+  const cant = document.getElementById('explosion-cantidad').value;
+  const fd = new FormData();
+  fd.append('id_formula', id);
+  fd.append('cantidad_a_producir_kg', cant);
+
+  fetch('/produccion/calcular-explosion/excel', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
+    .then(r => r.blob()).then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `explosion_${id}.xlsx`;
+      a.click();
+    });
+}
+
+function descargarPDF() {
+  const id = document.getElementById('explosion-formula').value;
+  const cant = document.getElementById('explosion-cantidad').value;
+  const fd = new FormData();
+  fd.append('id_formula', id);
+  fd.append('cantidad_a_producir_kg', cant);
+
+  fetch('/produccion/calcular-explosion/pdf', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
+    .then(r => r.blob()).then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `explosion_${id}.pdf`;
+      a.click();
+    });
+}
+
+function calcularBatch() {
+  try {
+    const ordenes = JSON.parse(document.getElementById('batch-input').value);
+    if (!Array.isArray(ordenes) || ordenes.length === 0) throw 'Debe ser un array no vacío';
+    fetch('/produccion/calcular-explosion/batch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-API-Key': API_KEY},
+      body: JSON.stringify(ordenes)
+    }).then(r => r.json()).then(data => {
+      if (!Array.isArray(data)) { toast('Error en batch', 'error'); return; }
+      document.getElementById('resultado-explosion').style.display = '';
+      document.getElementById('tbody-resultados').innerHTML = data.map(r => `
+        <tr>
+          <td>${r.orden} - ${r.sku || ''}</td>
+          <td>${r.requerido_kg || '-'} ${r.requerido_kg ? 'kg' : ''}</td>
+          <td>${r.disponible_kg || '-'} ${r.disponible_kg ? 'kg' : ''}</td>
+          <td>${r.faltante_kg || '-'} ${r.faltante_kg ? 'kg' : ''}</td>
+          <td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td>
+        </tr>
+      `).join('');
+    });
+  } catch(e) {
+    toast('JSON inválido: ' + e, 'error');
+  }
+}
+
+// --- AUDITORIA ---
+function cargarAuditoria() {
+  document.getElementById('loading-auditoria').style.display = 'block';
+  document.getElementById('tabla-auditoria').style.display = 'none';
+  api('/produccion/auditoria').then(data => {
+    document.getElementById('loading-auditoria').style.display = 'none';
+    if (!Array.isArray(data) || data.length === 0) {
+      document.getElementById('loading-auditoria').textContent = 'No hay registros de auditoría.';
+      return;
+    }
+    document.getElementById('tabla-auditoria').style.display = '';
+    document.getElementById('tbody-auditoria').innerHTML = data.map(r => `
+      <tr>
+        <td>${r.id}</td>
+        <td>${r.entidad}</td>
+        <td><span class="badge ${r.accion === 'ELIMINAR' ? 'fail' : 'ok'}">${r.accion}</span></td>
+        <td>${r.detalle}</td>
+        <td style="font-size:0.8rem">${r.usuario ? r.usuario.slice(0,12)+'...' : '-'}</td>
+        <td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td>
+      </tr>
+    `).join('');
+  });
+}
+
+function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Enter key login
+document.getElementById('api-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+</script>
+</body>
+</html>
