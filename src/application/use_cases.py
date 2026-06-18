@@ -1,1 +1,7 @@
-﻿# src/application/use_cases.py - Casos de uso: CalcularExplosion, CargarInventario (Arquitectura Hexagonal - Capa de Aplicación)
+﻿from abc import ABC, abstractmethod
+
+
+class PuertoInventario(ABC):
+    @abstractmethod
+    def leer_inventario(self, ruta: str) -> dict[str, float]:
+        ...
