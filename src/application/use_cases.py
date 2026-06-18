@@ -21,6 +21,10 @@ class RepositorioFormula(ABC):
         ...
 
     @abstractmethod
+    def guardar_muchos(self, formulas: dict[str, Formula]) -> None:
+        ...
+
+    @abstractmethod
     def obtener(self, id_formula: str) -> Formula | None:
         ...
 

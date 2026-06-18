@@ -276,9 +276,7 @@ def cargar_formulas(
 
     adapter = ExcelFormulasAdapter(mapeo=mapeo)
     formulas = adapter.leer_formulas(tmp_path)
-    repo = _repo_formula()
-    for ref, formula in formulas.items():
-        repo.guardar(ref, formula)
+    _repo_formula().guardar_muchos(formulas)
     os.unlink(tmp_path)
     _auditar("formula", "MASIVO", "CARGAR", f"{len(formulas)} formulas desde Excel", usuario["sub"])
     return {"mensaje": f"{len(formulas)} formulas cargadas"}

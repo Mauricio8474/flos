@@ -21,7 +21,7 @@ class ComponenteORM(Base):
     __tablename__ = "componentes_formula"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    id_formula = Column(String, nullable=False)
+    id_formula = Column(String, nullable=False, index=True)
     sku = Column(String, nullable=False)
     porcentaje = Column(Float, nullable=False)
 
@@ -47,6 +47,15 @@ class PostgresRepositorioFormula(RepositorioFormula):
                 session.add(ComponenteORM(id_formula=id_formula, sku=c.sku, porcentaje=c.porcentaje))
             session.commit()
 
+    def guardar_muchos(self, formulas: dict[str, Formula]) -> None:
+        with self._sf() as session:
+            for id_formula, formula in formulas.items():
+                session.merge(FormulaORM(id_formula=id_formula, nombre=formula.nombre))
+                session.query(ComponenteORM).filter_by(id_formula=id_formula).delete()
+                for c in formula.componentes:
+                    session.add(ComponenteORM(id_formula=id_formula, sku=c.sku, porcentaje=c.porcentaje))
+            session.commit()
+
     def obtener(self, id_formula: str) -> Formula | None:
         with self._sf() as session:
             f = session.query(FormulaORM).filter_by(id_formula=id_formula).first()
@@ -67,21 +76,22 @@ class PostgresRepositorioFormula(RepositorioFormula):
 
     def listar(self) -> dict[str, Formula]:
         with self._sf() as session:
-            formulas_orm = session.query(FormulaORM).all()
+            formulas_orm = {f.id_formula: f for f in session.query(FormulaORM).all()}
+            if not formulas_orm:
+                return {}
+            componentes = (
+                session.query(ComponenteORM)
+                .order_by(ComponenteORM.id_formula, ComponenteORM.id)
+                .all()
+            )
             resultado: dict[str, Formula] = {}
-            for f in formulas_orm:
-                componentes = (
-                    session.query(ComponenteORM)
-                    .filter_by(id_formula=f.id_formula)
-                    .order_by(ComponenteORM.id)
-                    .all()
+            for id_formula, f in formulas_orm.items():
+                comps = tuple(
+                    ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje)
+                    for c in componentes
+                    if c.id_formula == id_formula
                 )
-                resultado[f.id_formula] = Formula(
-                    nombre=f.nombre,
-                    componentes=tuple(
-                        ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje) for c in componentes
-                    ),
-                )
+                resultado[id_formula] = Formula(nombre=f.nombre, componentes=comps)
             return resultado
 
     def eliminar(self, id_formula: str) -> bool:
@@ -218,7 +228,7 @@ def init_db(database_url: str) -> sessionmaker:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
 
-    # Migrate existing tables adding new columns if missing
+    # Migrate existing tables adding new columns / indexes if missing
     with engine.connect() as conn:
         from sqlalchemy import inspect, text
         inspector = inspect(conn)
@@ -227,6 +237,11 @@ def init_db(database_url: str) -> sessionmaker:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN nombre VARCHAR DEFAULT ''"))
         if "costo_unitario" not in columns:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN costo_unitario FLOAT DEFAULT 0.0"))
+
+        indexes = {ix["name"] for ix in inspector.get_indexes("componentes_formula")}
+        if "ix_componentes_formula_id_formula" not in indexes:
+            conn.execute(text("CREATE INDEX ix_componentes_formula_id_formula ON componentes_formula (id_formula)"))
+
         conn.commit()
 
     return sessionmaker(bind=engine)
