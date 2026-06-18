@@ -36,35 +36,70 @@ Los archivos Excel deben ubicarse en la raíz del proyecto:
 
 ## Endpoints de la API
 
-### `POST /api/explosion`
+### `POST /produccion/cargar-formulas`
 
-Ejecuta el cálculo de explosión de materiales para una orden.
+Carga todas las fórmulas desde `formulas.xlsx` a la base de datos.
+
+### `POST /produccion/cargar-inventario`
+
+Carga un archivo Excel de inventario a la base de datos.
+
+- **archivo:** Excel con columnas `SKU`, `Nombre`, `Cantidad_KG`
+
+### `GET /produccion/inventario`
+
+Consulta el inventario actual en la base de datos.
+
+### `GET /produccion/formulas`
+
+Lista todas las fórmulas disponibles en la base de datos.
+
+### `POST /produccion/formulas`
+
+Crea una nueva fórmula en la base de datos.
 
 ```json
 {
-  "orden_id": "ORD-001",
-  "producto_codigo": "ES-001",
-  "cantidad": 100
+  "id": "F-001",
+  "nombre": "Mi Formula",
+  "componentes": [{"sku": "MP001", "porcentaje": 60}]
 }
 ```
 
-### `POST /api/inventario/cargar`
+### `PUT /produccion/formulas/{id}`
 
-Carga los datos del archivo `inventario.xlsx` a la base de datos.
+Actualiza una fórmula existente.
 
-```json
-{
-  "archivo": "inventario.xlsx"
-}
+### `DELETE /produccion/formulas/{id}`
+
+Elimina una fórmula.
+
+### `POST /produccion/calcular-explosion`
+
+Ejecuta el cálculo de explosión de materiales. **No necesita archivo Excel** — el inventario debe estar precargado en la base de datos.
+
+| Parámetro | Tipo | Descripción |
+|---|---|---|
+| `id_formula` | string | ID de la fórmula en BD |
+| `cantidad_a_producir_kg` | float | Cantidad a producir |
+
+## Flujo de trabajo
+
+```bash
+# 1. Cargar fórmulas desde Excel a la BD
+curl -X POST http://localhost:8000/produccion/cargar-formulas
+
+# 2. Cargar inventario desde Excel a la BD
+curl -X POST http://localhost:8000/produccion/cargar-inventario \
+  -F "archivo=@inventario.xlsx"
+
+# 3. Consultar fórmulas disponibles
+curl http://localhost:8000/produccion/formulas
+
+# 4. Ejecutar explosión
+curl -X POST http://localhost:8000/produccion/calcular-explosion \
+  -d "id_formula=AMC2705&cantidad_a_producir_kg=100"
 ```
-
-### `GET /api/inventario`
-
-Consulta el inventario actual.
-
-### `GET /api/productos`
-
-Lista los productos disponibles.
 
 ## Desarrollo
 

@@ -1,4 +1,5 @@
-﻿from tempfile import NamedTemporaryFile
+﻿from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
@@ -7,13 +8,13 @@ from pydantic import BaseModel
 from src.domain.models import ComponenteFormula, Formula
 from src.domain.services import CalculadorMRP
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
+from src.infrastructure.adapters.repositories import (
+    PostgresRepositorioFormula,
+    PostgresRepositorioInventario,
+    init_db,
+)
 
 app = FastAPI(title="Flos MES", version="0.1.0")
-
-RUTA_FORMULAS = "formulas.xlsx"
-
-formulas_adapter = ExcelFormulasAdapter()
-_formulas_cache: dict[str, Formula] | None = None
 
 
 class ComponenteInput(BaseModel):
@@ -27,16 +28,28 @@ class FormulaInput(BaseModel):
     componentes: list[ComponenteInput]
 
 
-def _obtener_formulas() -> dict[str, Formula]:
-    global _formulas_cache
-    if _formulas_cache is None:
-        _formulas_cache = formulas_adapter.leer_formulas(RUTA_FORMULAS)
-    return _formulas_cache
+@app.on_event("startup")
+def startup():
+    import os
+
+    db_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://flos_admin:flos_secure_password@localhost:5432/flos_core")
+    sf = init_db(db_url)
+    app.state.sf = sf
+    app.state.repo_formula = PostgresRepositorioFormula(sf)
+    app.state.repo_inventario = PostgresRepositorioInventario(sf)
+
+
+def _repo_formula() -> PostgresRepositorioFormula:
+    return app.state.repo_formula
+
+
+def _repo_inventario() -> PostgresRepositorioInventario:
+    return app.state.repo_inventario
 
 
 @app.get("/produccion/formulas")
 def listar_formulas() -> list[dict]:
-    todas = _obtener_formulas()
+    todas = _repo_formula().listar()
     return [
         {
             "id": ref,
@@ -51,10 +64,9 @@ def listar_formulas() -> list[dict]:
 
 @app.get("/produccion/formulas/{id_formula}")
 def obtener_formula(id_formula: str) -> dict:
-    todas = _obtener_formulas()
-    if id_formula not in todas:
+    f = _repo_formula().obtener(id_formula)
+    if not f:
         return {"error": f"Formula '{id_formula}' no encontrada"}
-    f = todas[id_formula]
     return {
         "id": id_formula,
         "nombre": f.nombre,
@@ -66,14 +78,16 @@ def obtener_formula(id_formula: str) -> dict:
 
 @app.post("/produccion/formulas")
 def crear_formula(body: FormulaInput) -> dict:
-    todas = _obtener_formulas()
-    if body.id in todas:
+    repo = _repo_formula()
+    if repo.obtener(body.id):
         return {"error": f"La formula '{body.id}' ya existe"}
-    todas[body.id] = Formula(
-        nombre=body.nombre,
-        componentes=tuple(
-            ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje)
-            for c in body.componentes
+    repo.guardar(
+        body.id,
+        Formula(
+            nombre=body.nombre,
+            componentes=tuple(
+                ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje) for c in body.componentes
+            ),
         ),
     )
     return {"mensaje": f"Formula '{body.id}' creada", "componentes": len(body.componentes)}
@@ -81,14 +95,16 @@ def crear_formula(body: FormulaInput) -> dict:
 
 @app.put("/produccion/formulas/{id_formula}")
 def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
-    todas = _obtener_formulas()
-    if id_formula not in todas:
+    repo = _repo_formula()
+    if not repo.obtener(id_formula):
         return {"error": f"Formula '{id_formula}' no encontrada"}
-    todas[id_formula] = Formula(
-        nombre=body.nombre,
-        componentes=tuple(
-            ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje)
-            for c in body.componentes
+    repo.guardar(
+        id_formula,
+        Formula(
+            nombre=body.nombre,
+            componentes=tuple(
+                ComponenteFormula(sku=c.sku, porcentaje=c.porcentaje) for c in body.componentes
+            ),
         ),
     )
     return {"mensaje": f"Formula '{id_formula}' actualizada", "componentes": len(body.componentes)}
@@ -96,36 +112,52 @@ def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
 
 @app.delete("/produccion/formulas/{id_formula}")
 def eliminar_formula(id_formula: str) -> dict:
-    todas = _obtener_formulas()
-    if id_formula not in todas:
-        return {"error": f"Formula '{id_formula}' no encontrada"}
-    del todas[id_formula]
-    return {"mensaje": f"Formula '{id_formula}' eliminada"}
+    if _repo_formula().eliminar(id_formula):
+        return {"mensaje": f"Formula '{id_formula}' eliminada"}
+    return {"error": f"Formula '{id_formula}' no encontrada"}
 
 
-@app.post("/produccion/calcular-explosion")
-def calcular_explosion(
-    archivo: UploadFile = File(...),
-    id_formula: str = Form(...),
-    cantidad_a_producir_kg: float = Form(...),
-) -> list[dict]:
-    todas = _obtener_formulas()
+@app.post("/produccion/cargar-formulas")
+def cargar_formulas() -> dict:
+    adapter = ExcelFormulasAdapter()
+    formulas = adapter.leer_formulas("formulas.xlsx")
+    repo = _repo_formula()
+    for ref, formula in formulas.items():
+        repo.guardar(ref, formula)
+    return {"mensaje": f"{len(formulas)} formulas cargadas desde formulas.xlsx"}
 
-    if id_formula not in todas:
-        disponibles = sorted(todas.keys())[:5]
-        return [{
-            "error": f"Formula '{id_formula}' no encontrada",
-            "sugerencia": f"Usa GET /produccion/formulas para ver las disponibles. Ej: {disponibles}",
-        }]
 
+@app.post("/produccion/cargar-inventario")
+def cargar_inventario(archivo: UploadFile = File(...)) -> dict:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
         tmp_path = tmp.name
 
-    inventario_adapter = ExcelInventarioAdapter()
-    inventario = inventario_adapter.leer_inventario(tmp_path)
+    adapter = ExcelInventarioAdapter()
+    inventario = adapter.leer_inventario(tmp_path)
+    _repo_inventario().guardar_muchos(inventario)
+    return {"mensaje": f"Inventario actualizado: {len(inventario)} SKUs"}
 
-    formula = todas[id_formula]
+
+@app.get("/produccion/inventario")
+def obtener_inventario() -> dict[str, float]:
+    return _repo_inventario().obtener_todos()
+
+
+@app.post("/produccion/calcular-explosion")
+def calcular_explosion(
+    id_formula: str = Form(...),
+    cantidad_a_producir_kg: float = Form(...),
+) -> list[dict]:
+    formula = _repo_formula().obtener(id_formula)
+    if not formula:
+        ids = sorted(_repo_formula().listar().keys())[:5]
+        return [{
+            "error": f"Formula '{id_formula}' no encontrada",
+            "sugerencia": f"Usa GET /produccion/formulas. Ej: {ids}",
+        }]
+
+    inventario = _repo_inventario().obtener_todos()
     resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)
 
     return [
