@@ -131,6 +131,33 @@ curl http://localhost:8000/produccion/formulas \
 | `POST` | `/produccion/cargar-inventario` | admin, ingenieria, almacen |
 | `GET` | `/produccion/inventario` | Todos autenticados |
 
+#### Formato del Excel de inventario
+
+Se soportan dos formatos:
+
+**Formato simple** (por defecto): encabezados en fila 1.
+
+| SKU | Nombre | Cantidad_KG |
+|---|---|---|
+| MP001 | Alcohol | 500.0 |
+
+**Formato SIIGO** (inventario real): encabezados en fila 7, columnas `REFERENCIA` y `SALDO`.
+
+Parámetros adicionales para el endpoint:
+- `fila_encabezados` — número de fila donde están los encabezados (default: 1)
+- `columna_sku` — nombre de la columna con el SKU (default: `SKU`)
+- `columna_cantidad` — nombre de la columna con la cantidad (default: `Cantidad_KG`)
+
+```bash
+# Formato SIIGO
+curl -X POST http://localhost:8000/produccion/cargar-inventario \
+  -H "Authorization: Bearer <token>" \
+  -F "archivo=@inventario.xlsx" \
+  -F "fila_encabezados=7" \
+  -F "columna_sku=REFERENCIA" \
+  -F "columna_cantidad=SALDO"
+```
+
 ### Explosión de materiales
 
 | Método | Endpoint | Permiso |

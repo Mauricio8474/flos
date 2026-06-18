@@ -245,11 +245,22 @@ def cargar_formulas(usuario: dict = Depends(obtener_usuario_actual)) -> dict:
 # Inventario
 # ---------------------------------------------------------------------------
 @app.post("/produccion/cargar-inventario", dependencies=[Depends(requerir_rol("admin", "ingenieria", "almacen"))])
-def cargar_inventario(archivo: UploadFile = File(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+def cargar_inventario(
+    archivo: UploadFile = File(...),
+    fila_encabezados: int = Form(1),
+    columna_sku: str | None = Form(None),
+    columna_cantidad: str | None = Form(None),
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> dict:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
         tmp_path = tmp.name
-    adapter = ExcelInventarioAdapter()
+
+    mapeo = None
+    if columna_sku and columna_cantidad:
+        mapeo = {"SKU": columna_sku, "Cantidad_KG": columna_cantidad}
+
+    adapter = ExcelInventarioAdapter(fila_encabezados=fila_encabezados, mapeo=mapeo)
     inventario = adapter.leer_inventario(tmp_path)
     _repo_inventario().guardar_muchos(inventario)
     _auditar("inventario", "MASIVO", "CARGAR", f"{len(inventario)} SKUs desde Excel", usuario["sub"])

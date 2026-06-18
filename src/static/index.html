@@ -129,8 +129,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <h2>Cargar inventario</h2>
     <div class="form-row">
       <div class="form-group"><label>Archivo Excel (.xlsx)</label><input type="file" id="inv-file" accept=".xlsx"></div>
+      <div class="form-group"><label>Fila encabezados</label><input type="number" id="inv-header-row" value="7" min="1" style="min-width:80px"></div>
+      <div class="form-group"><label>Columna SKU</label><input type="text" id="inv-col-sku" value="REFERENCIA" style="min-width:100px"></div>
+      <div class="form-group"><label>Columna Cantidad</label><input type="text" id="inv-col-cant" value="SALDO" style="min-width:100px"></div>
       <button onclick="subirInventario()">Cargar</button>
     </div>
+    <p style="font-size:0.8rem;color:#999;margin-top:0.5rem">Formato simple: fila=1, SKU, Cantidad_KG | Formato SIIGO: fila=7, REFERENCIA, SALDO</p>
   </div>
   <div class="card">
     <h2>Inventario actual</h2>
@@ -392,7 +396,13 @@ function cargarInventario() {
 function subirInventario() {
   const file = document.getElementById('inv-file').files[0];
   if (!file) { toast('Seleccione un archivo Excel', 'error'); return; }
-  const fd = new FormData(); fd.append('archivo', file);
+  const fd = new FormData();
+  fd.append('archivo', file);
+  fd.append('fila_encabezados', document.getElementById('inv-header-row').value || '1');
+  const skuCol = document.getElementById('inv-col-sku').value.trim();
+  const cantCol = document.getElementById('inv-col-cant').value.trim();
+  if (skuCol) fd.append('columna_sku', skuCol);
+  if (cantCol) fd.append('columna_cantidad', cantCol);
   api('/produccion/cargar-inventario', {method:'POST', body:fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarInventario(); });
 }
 

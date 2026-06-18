@@ -9,6 +9,14 @@ from src.domain.models import ComponenteFormula, Formula
 class ExcelInventarioAdapter(PuertoInventario):
     COLUMNAS_REQUERIDAS = ("SKU", "Nombre", "Cantidad_KG")
 
+    def __init__(
+        self,
+        fila_encabezados: int = 1,
+        mapeo: dict[str, str] | None = None,
+    ) -> None:
+        self._fila_encabezados = fila_encabezados
+        self._mapeo = mapeo or {}
+
     def leer_inventario(self, ruta: str) -> dict[str, float]:
         archivo = Path(ruta)
 
@@ -24,19 +32,38 @@ class ExcelInventarioAdapter(PuertoInventario):
         if not filas:
             raise ValueError("El archivo Excel no contiene datos")
 
-        encabezados = [str(c).strip() if c is not None else "" for c in filas[0]]
-        for col in self.COLUMNAS_REQUERIDAS:
-            if col not in encabezados:
-                raise ValueError(
-                    f"Columna requerida '{col}' no encontrada. "
-                    f"Columnas encontradas: {encabezados}"
-                )
+        idx_header = self._fila_encabezados - 1
+        if idx_header >= len(filas):
+            raise ValueError(
+                f"Fila de encabezados {self._fila_encabezados} no existe "
+                f"(el archivo tiene {len(filas)} filas)"
+            )
 
-        idx_sku = encabezados.index("SKU")
-        idx_cant = encabezados.index("Cantidad_KG")
+        encabezados = [str(c).strip() if c is not None else "" for c in filas[idx_header]]
+
+        if self._mapeo:
+            col_sku = self._mapeo.get("SKU", "SKU")
+            col_cant = self._mapeo.get("Cantidad_KG", "Cantidad_KG")
+        else:
+            col_sku = "SKU"
+            col_cant = "Cantidad_KG"
+
+        if col_sku not in encabezados:
+            raise ValueError(
+                f"Columna SKU ('{col_sku}') no encontrada. "
+                f"Columnas: {encabezados}"
+            )
+        if col_cant not in encabezados:
+            raise ValueError(
+                f"Columna de cantidad ('{col_cant}') no encontrada. "
+                f"Columnas: {encabezados}"
+            )
+
+        idx_sku = encabezados.index(col_sku)
+        idx_cant = encabezados.index(col_cant)
         inventario: dict[str, float] = {}
 
-        for fila in filas[1:]:
+        for fila in filas[idx_header + 1:]:
             sku = str(fila[idx_sku]).strip() if fila[idx_sku] is not None else ""
             if not sku:
                 continue
