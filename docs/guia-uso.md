@@ -7,6 +7,7 @@
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
 | `DATABASE_URL` | Conexión a PostgreSQL | — (definido en `.env`) |
+| `JWT_SECRET` | Clave secreta para firmar tokens JWT | `flos-secret-key-change-in-production` |
 | `EXCEL_DIR` | Directorio de archivos .xlsx | `.` (raíz del proyecto) |
 
 Copiar `.env.example` a `.env` y ajustar las credenciales antes de ejecutar.
@@ -34,31 +35,88 @@ Los archivos Excel deben ubicarse en la raíz del proyecto:
 | `formulas.xlsx` | Fórmulas y recetas para la explosión de materiales |
 | `inventario.xlsx` | Stock actual de materias primas y materiales |
 
-## Endpoints de la API
+## Dashboard Web
 
-### `POST /produccion/cargar-formulas`
+La interfaz para el personal está en `http://localhost:8000/dashboard/`.
 
-Carga todas las fórmulas desde `formulas.xlsx` a la base de datos.
+### Login
 
-### `POST /produccion/cargar-inventario`
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| `admin` | `123456789` | Administrador (control total) |
 
-Carga un archivo Excel de inventario a la base de datos.
+El usuario `admin` se crea automáticamente al iniciar la app si no existe.
 
-- **archivo:** Excel con columnas `SKU`, `Nombre`, `Cantidad_KG`
+### Roles y permisos
 
-### `GET /produccion/inventario`
+| Sección | admin | ingenieria | almacen | produccion | consultor |
+|---|---|---|---|---|---|
+| Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Fórmulas (ver) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Fórmulas (crear/editar/eliminar) | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Cargar fórmulas desde Excel | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Inventario (ver) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Inventario (cargar Excel) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Explosión (calcular) | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Descargar Excel/PDF | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Auditoría | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Usuarios (CRUD) | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-Consulta el inventario actual en la base de datos.
+## API REST
 
-### `GET /produccion/formulas`
+Todas las llamadas a la API requieren autenticación JWT.
 
-Lista todas las fórmulas disponibles en la base de datos.
+### Autenticación
 
-### `POST /produccion/formulas`
+```bash
+# Obtener token
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "123456789"}'
 
-Crea una nueva fórmula en la base de datos.
+# Respuesta:
+# {"access_token": "...", "token_type": "bearer", "rol": "admin", "nombre": "Administrador"}
+```
+
+Usar el token en cada petición:
+
+```bash
+curl http://localhost:8000/produccion/formulas \
+  -H "Authorization: Bearer <token>"
+```
+
+### Usuarios (solo admin)
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/usuarios` | Listar usuarios |
+| `POST` | `/usuarios` | Crear usuario |
+| `PUT` | `/usuarios/{username}` | Actualizar usuario |
+| `DELETE` | `/usuarios/{username}` | Desactivar usuario |
 
 ```json
+// POST /usuarios
+{
+  "username": "jperez",
+  "password": "mi-clave",
+  "rol": "ingenieria",
+  "nombre": "Juan Pérez"
+}
+```
+
+### Fórmulas
+
+| Método | Endpoint | Permiso |
+|---|---|---|
+| `GET` | `/produccion/formulas` | Todos autenticados |
+| `GET` | `/produccion/formulas/{id}` | Todos autenticados |
+| `POST` | `/produccion/formulas` | admin, ingenieria |
+| `PUT` | `/produccion/formulas/{id}` | admin, ingenieria |
+| `DELETE` | `/produccion/formulas/{id}` | admin, ingenieria |
+| `POST` | `/produccion/cargar-formulas` | admin, ingenieria |
+
+```json
+// POST /produccion/formulas
 {
   "id": "F-001",
   "nombre": "Mi Formula",
@@ -66,66 +124,82 @@ Crea una nueva fórmula en la base de datos.
 }
 ```
 
-### `PUT /produccion/formulas/{id}`
+### Inventario
 
-Actualiza una fórmula existente.
-
-### `DELETE /produccion/formulas/{id}`
-
-Elimina una fórmula.
-
-### `POST /produccion/calcular-explosion`
-
-Ejecuta el cálculo de explosión de materiales. **No necesita archivo Excel** — el inventario debe estar precargado en la base de datos.
-
-| Parámetro | Tipo | Descripción |
+| Método | Endpoint | Permiso |
 |---|---|---|
-| `id_formula` | string | ID de la fórmula en BD |
-| `cantidad_a_producir_kg` | float | Cantidad a producir |
+| `POST` | `/produccion/cargar-inventario` | admin, ingenieria, almacen |
+| `GET` | `/produccion/inventario` | Todos autenticados |
 
-### `POST /produccion/calcular-explosion/batch`
+### Explosión de materiales
 
-Ejecuta múltiples explosiones en una sola llamada.
+| Método | Endpoint | Permiso |
+|---|---|---|
+| `POST` | `/produccion/calcular-explosion` | admin, ingenieria, produccion |
+| `POST` | `/produccion/calcular-explosion/batch` | admin, ingenieria, produccion |
+| `POST` | `/produccion/calcular-explosion/excel` | admin, ingenieria, almacen, produccion |
+| `POST` | `/produccion/calcular-explosion/pdf` | admin, ingenieria, almacen, produccion |
 
-```json
-[
-  {"id_formula": "AMC2705", "cantidad": 100},
-  {"id_formula": "AM2494", "cantidad": 50}
-]
+```bash
+# Explosión simple
+curl -X POST http://localhost:8000/produccion/calcular-explosion \
+  -H "Authorization: Bearer <token>" \
+  -d "id_formula=AMC2705&cantidad_a_producir_kg=100"
+
+# Explosión batch
+curl -X POST http://localhost:8000/produccion/calcular-explosion/batch \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '[{"id_formula": "AMC2705", "cantidad": 100}, {"id_formula": "AM2494", "cantidad": 50}]'
+
+# Descargar Excel
+curl -X POST http://localhost:8000/produccion/calcular-explosion/excel \
+  -H "Authorization: Bearer <token>" \
+  -d "id_formula=AMC2705&cantidad_a_producir_kg=100" \
+  -o explosion.xlsx
+
+# Descargar PDF
+curl -X POST http://localhost:8000/produccion/calcular-explosion/pdf \
+  -H "Authorization: Bearer <token>" \
+  -d "id_formula=AMC2705&cantidad_a_producir_kg=100" \
+  -o explosion.pdf
 ```
 
-### `POST /produccion/calcular-explosion/excel`
+### Auditoría (solo admin)
 
-Descarga el resultado como archivo `.xlsx`.
-
-### `POST /produccion/calcular-explosion/pdf`
-
-Descarga el resultado como archivo `.pdf`.
-
-### `GET /produccion/auditoria`
-
-Consulta el historial de cambios en fórmulas e inventario.
+| Método | Endpoint |
+|---|---|
+| `GET` | `/produccion/auditoria?limite=100` |
 
 ## Flujo de trabajo
 
 ```bash
-# 1. Cargar fórmulas desde Excel a la BD
-curl -X POST http://localhost:8000/produccion/cargar-formulas \
-  -H "X-API-Key: flos-dev-key-2026"
+# 1. Obtener token
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"123456789"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
-# 2. Cargar inventario desde Excel a la BD
+# 2. Cargar fórmulas desde Excel a la BD
+curl -X POST http://localhost:8000/produccion/cargar-formulas \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. Cargar inventario desde Excel a la BD
 curl -X POST http://localhost:8000/produccion/cargar-inventario \
-  -H "X-API-Key: flos-dev-key-2026" \
+  -H "Authorization: Bearer $TOKEN" \
   -F "archivo=@inventario.xlsx"
 
-# 3. Consultar fórmulas disponibles
+# 4. Consultar fórmulas disponibles
 curl http://localhost:8000/produccion/formulas \
-  -H "X-API-Key: flos-dev-key-2026"
+  -H "Authorization: Bearer $TOKEN"
 
-# 4. Ejecutar explosión
+# 5. Ejecutar explosión
 curl -X POST http://localhost:8000/produccion/calcular-explosion \
-  -H "X-API-Key: flos-dev-key-2026" \
+  -H "Authorization: Bearer $TOKEN" \
   -d "id_formula=AMC2705&cantidad_a_producir_kg=100"
+
+# 6. Ver auditoría (solo admin)
+curl http://localhost:8000/produccion/auditoria \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Desarrollo
