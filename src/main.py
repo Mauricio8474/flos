@@ -369,6 +369,50 @@ def calcular_explosion_batch(ordenes: list[OrdenBatch]) -> list[dict]:
     return resultados
 
 
+@app.post("/produccion/calcular-explosion/batch/excel", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
+def calcular_explosion_batch_excel(
+    archivo: UploadFile = File(...),
+    columna_id: int | None = Form(None),
+    columna_cantidad: int | None = Form(None),
+) -> list[dict]:
+    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(archivo.file.read())
+        tmp_path = tmp.name
+    wb = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
+    ws = wb.active
+    filas = list(ws.iter_rows(values_only=True))
+    os.unlink(tmp_path)
+    if not filas:
+        return [{"error": "El archivo Excel no contiene datos"}]
+    encabezados = [str(c).strip() if c is not None else "" for c in filas[0]]
+    idx_id = columna_id if columna_id is not None else 0
+    idx_cant = columna_cantidad if columna_cantidad is not None else 1
+    if idx_id >= len(encabezados) or idx_cant >= len(encabezados):
+        return [{"error": f"Índices de columna fuera de rango. El archivo tiene {len(encabezados)} columnas"}]
+    ordenes = []
+    for fila in filas[1:]:
+        ref = str(fila[idx_id]).strip() if fila[idx_id] is not None else ""
+        try:
+            cant = float(fila[idx_cant]) if fila[idx_cant] is not None else 0.0
+        except (ValueError, TypeError):
+            cant = 0.0
+        if ref and cant > 0:
+            ordenes.append({"id_formula": ref, "cantidad": cant})
+    if not ordenes:
+        return [{"error": "No se encontraron órdenes válidas en el Excel"}]
+    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
+    repo = _repo_formula()
+    resultados = []
+    for orden in ordenes:
+        formula = repo.obtener(orden["id_formula"])
+        if not formula:
+            resultados.append({"orden": orden["id_formula"], "error": "Formula no encontrada"})
+            continue
+        for r in CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario):
+            resultados.append({"orden": orden["id_formula"], "sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto})
+    return resultados
+
+
 def _generar_excel_resultados(resultados, id_formula) -> StreamingResponse:
     wb = openpyxl.Workbook()
     ws = wb.active
