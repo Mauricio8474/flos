@@ -3,30 +3,14 @@
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
 
-from src.domain.models import ComponenteFormula, Formula
 from src.domain.services import CalculadorMRP
-from src.infrastructure.adapters.excel_reader import ExcelInventarioAdapter
+from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 
 app = FastAPI(title="Flos MES", version="0.1.0")
 
-FORMULAS_MOCK: dict[str, Formula] = {
-    "F-001": Formula(
-        nombre="Esencias Tropicales",
-        componentes=(
-            ComponenteFormula(sku="ACEITE-BASE", porcentaje=60.0),
-            ComponenteFormula(sku="AROMA-MANGO", porcentaje=25.0),
-            ComponenteFormula(sku="COLORANTE-ROJO", porcentaje=15.0),
-        ),
-    ),
-    "F-002": Formula(
-        nombre="Brisa Marina",
-        componentes=(
-            ComponenteFormula(sku="ACEITE-BASE", porcentaje=50.0),
-            ComponenteFormula(sku="AROMA-BRISAMAR", porcentaje=30.0),
-            ComponenteFormula(sku="ESTABILIZANTE", porcentaje=20.0),
-        ),
-    ),
-}
+RUTA_FORMULAS = "formulas.xlsx"
+
+formulas_adapter = ExcelFormulasAdapter()
 
 
 @app.post("/produccion/calcular-explosion")
@@ -35,17 +19,19 @@ def calcular_explosion(
     id_formula: str = Form(...),
     cantidad_a_producir_kg: float = Form(...),
 ) -> list[dict]:
-    if id_formula not in FORMULAS_MOCK:
+    todas = formulas_adapter.leer_formulas(RUTA_FORMULAS)
+
+    if id_formula not in todas:
         return [{"error": f"Fórmula '{id_formula}' no encontrada"}]
 
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
         tmp_path = tmp.name
 
-    adapter = ExcelInventarioAdapter()
-    inventario = adapter.leer_inventario(tmp_path)
+    inventario_adapter = ExcelInventarioAdapter()
+    inventario = inventario_adapter.leer_inventario(tmp_path)
 
-    formula = FORMULAS_MOCK[id_formula]
+    formula = todas[id_formula]
     resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)
 
     return [
