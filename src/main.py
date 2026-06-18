@@ -1,6 +1,7 @@
 ﻿import io
 import logging
 import os
+import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -30,6 +31,7 @@ from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
     PostgresRepositorioFormula,
     PostgresRepositorioInventario,
+    PostgresRepositorioOrdenes,
     PostgresRepositorioUsuario,
     init_db,
 )
@@ -48,6 +50,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 @app.get("/")
 def root():
     return RedirectResponse(url="/dashboard/")
+
+
+# Dashboard catch-all — keep this AFTER any /dashboard/* specific routes
+@app.get("/dashboard/estadisticas", dependencies=[Depends(obtener_usuario_actual)])
+def obtener_estadisticas() -> dict:
+    return _repo_ordenes().estadisticas()
 
 
 @app.get("/dashboard/{rest:path}")
@@ -99,6 +107,7 @@ def startup():
     app.state.repo_inventario = PostgresRepositorioInventario(sf)
     app.state.repo_auditoria = PostgresRepositorioAuditoria(sf)
     app.state.repo_usuarios = PostgresRepositorioUsuario(sf)
+    app.state.repo_ordenes = PostgresRepositorioOrdenes(sf)
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -123,6 +132,10 @@ def _repo_auditoria():
 
 def _repo_usuarios():
     return app.state.repo_usuarios
+
+
+def _repo_ordenes():
+    return app.state.repo_ordenes
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -342,20 +355,79 @@ def _inventario_a_dict(items: list) -> dict[str, ItemInventario]:
     return {i.sku: i for i in items}
 
 
+def _detalles_from_resultados(resultados) -> list[dict]:
+    return [
+        {
+            "sku": r.sku,
+            "nombre": r.nombre,
+            "requerido_kg": r.requerido_kg,
+            "disponible_kg": r.disponible_kg,
+            "faltante_kg": r.faltante_kg,
+            "cubierto": r.cubierto,
+            "nota": r.nota,
+        }
+        for r in resultados
+    ]
+
+
+def _guardar_orden(
+    id_formula: str,
+    nombre_formula: str,
+    cantidad_kg: float,
+    usuario: str,
+    resultados,
+) -> str:
+    orden_id = str(uuid.uuid4())
+    _repo_ordenes().guardar(
+        id_orden=orden_id,
+        id_formula=id_formula,
+        nombre_formula=nombre_formula,
+        cantidad_kg=cantidad_kg,
+        usuario=usuario,
+        detalles=_detalles_from_resultados(resultados),
+    )
+    return orden_id
+
+
+def _resultado_a_dict(r, orden_id="", orden=""):
+    d = {
+        "sku": r.sku,
+        "nombre": r.nombre,
+        "requerido_kg": r.requerido_kg,
+        "disponible_kg": r.disponible_kg,
+        "faltante_kg": r.faltante_kg,
+        "cubierto": r.cubierto,
+        "nota": r.nota,
+        "orden_id": orden_id,
+    }
+    if orden:
+        d["orden"] = orden
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Explosión
 # ---------------------------------------------------------------------------
 @app.post("/produccion/calcular-explosion", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
-def calcular_explosion(id_formula: str = Form(...), cantidad_a_producir_kg: float = Form(...)) -> list[dict]:
+def calcular_explosion(
+    id_formula: str = Form(...),
+    cantidad_a_producir_kg: float = Form(...),
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> list[dict]:
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return [{"error": f"Formula '{id_formula}' no encontrada"}]
     inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    return [{"sku": r.sku, "nombre": r.nombre, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto, "nota": r.nota} for r in CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)]
+    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
+    orden_id = _guardar_orden(id_formula, formula.nombre, cantidad_a_producir_kg, usuario["sub"], resultados)
+    return [_resultado_a_dict(r, orden_id=orden_id) for r in resultados]
 
 
 @app.post("/produccion/calcular-explosion/batch", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
-def calcular_explosion_batch(ordenes: list[OrdenBatch]) -> list[dict]:
+def calcular_explosion_batch(
+    ordenes: list[OrdenBatch],
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> list[dict]:
     inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
     repo = _repo_formula()
     resultados = []
@@ -364,8 +436,10 @@ def calcular_explosion_batch(ordenes: list[OrdenBatch]) -> list[dict]:
         if not formula:
             resultados.append({"orden": orden.id_formula, "error": "Formula no encontrada"})
             continue
-        for r in CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario):
-            resultados.append({"orden": orden.id_formula, "sku": r.sku, "nombre": r.nombre, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto, "nota": r.nota})
+        res = CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario)
+        orden_id = _guardar_orden(orden.id_formula, formula.nombre, orden.cantidad, usuario["sub"], res)
+        for r in res:
+            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden.id_formula))
     return resultados
 
 
@@ -374,6 +448,7 @@ def calcular_explosion_batch_excel(
     archivo: UploadFile = File(...),
     columna_id: int | None = Form(None),
     columna_cantidad: int | None = Form(None),
+    usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
@@ -408,8 +483,10 @@ def calcular_explosion_batch_excel(
         if not formula:
             resultados.append({"orden": orden["id_formula"], "error": "Formula no encontrada"})
             continue
-        for r in CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario):
-            resultados.append({"orden": orden["id_formula"], "sku": r.sku, "nombre": r.nombre, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto, "nota": r.nota})
+        res = CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario)
+        orden_id = _guardar_orden(orden["id_formula"], formula.nombre, orden["cantidad"], usuario["sub"], res)
+        for r in res:
+            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden["id_formula"]))
     return resultados
 
 
@@ -474,6 +551,29 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
     resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
     return _generar_pdf_resultados(resultados, id_formula, cantidad_a_producir_kg)
+
+
+# ---------------------------------------------------------------------------
+# Órdenes de producción
+# ---------------------------------------------------------------------------
+@app.get("/ordenes", dependencies=[Depends(obtener_usuario_actual)])
+def listar_ordenes(limite: int = 100) -> list[dict]:
+    return _repo_ordenes().listar(limite)
+
+
+@app.get("/ordenes/{id_orden}", dependencies=[Depends(obtener_usuario_actual)])
+def obtener_orden(id_orden: str) -> dict:
+    orden = _repo_ordenes().obtener(id_orden)
+    if not orden:
+        return {"error": f"Orden '{id_orden}' no encontrada"}
+    return orden
+
+
+@app.delete("/ordenes/{id_orden}", dependencies=[Depends(requerir_rol("admin"))])
+def eliminar_orden(id_orden: str) -> dict:
+    if _repo_ordenes().eliminar(id_orden):
+        return {"mensaje": f"Orden '{id_orden}' eliminada"}
+    return {"error": f"Orden '{id_orden}' no encontrada"}
 
 
 # ---------------------------------------------------------------------------

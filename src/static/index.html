@@ -100,6 +100,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <button onclick="showTab('formulas')">Fórmulas</button>
   <button onclick="showTab('inventario')">Inventario</button>
   <button onclick="showTab('explosion')">Explosión</button>
+  <button onclick="showTab('ordenes')">Órdenes</button>
   <button id="nav-auditoria" onclick="showTab('auditoria')">Auditoría</button>
   <button id="nav-usuarios" onclick="showTab('usuarios')">Usuarios</button>
 </nav>
@@ -107,6 +108,11 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
 
 <section id="tab-dashboard" class="active">
   <div class="card"><h2>Resumen</h2><div id="dashboard-resumen" style="display:flex;gap:1rem;flex-wrap:wrap">Cargando...</div></div>
+  <div class="card"><h2>Órdenes por día (últimos 7 días)</h2><div id="dashboard-chart" style="display:flex;gap:0.5rem;align-items:end;min-height:120px">Cargando...</div></div>
+  <div class="card" style="display:flex;gap:2rem;flex-wrap:wrap">
+    <div style="flex:1;min-width:300px"><h2>Productos más demandados</h2><div id="dashboard-productos">Cargando...</div></div>
+    <div style="flex:1;min-width:300px"><h2>Materiales más requeridos</h2><div id="dashboard-materiales">Cargando...</div></div>
+  </div>
 </section>
 
 <section id="tab-formulas">
@@ -189,9 +195,20 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   </div>
   <div id="resultado-explosion" style="display:none">
     <div class="card"><h2>Resultados</h2>
-      <table><thead><tr><th>Orden</th><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead>
+      <table><thead><tr><th>Orden</th><th>ID Orden</th><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead>
       <tbody id="tbody-resultados"></tbody></table>
     </div>
+  </div>
+</section>
+
+<section id="tab-ordenes">
+  <div class="card">
+    <h2>Órdenes de producción</h2>
+    <div id="loading-ordenes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-ordenes" style="display:none">
+      <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Usuario</th><th>Fecha</th><th>Componentes</th><th id="th-acciones-orden">Acciones</th></tr></thead>
+      <tbody id="tbody-ordenes"></tbody>
+    </table>
   </div>
 </section>
 
@@ -251,6 +268,16 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
       </select>
     </div>
     <div class="modal-actions"><button onclick="cerrarModal('modal-usuario')">Cancelar</button><button class="success" onclick="guardarUsuario()">Guardar</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal-detalle-orden">
+  <div class="modal-content">
+    <h2 id="modal-detalle-orden-title">Detalle de orden</h2>
+    <table><thead><tr><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead>
+      <tbody id="modal-detalle-orden-body"></tbody>
+    </table>
+    <div class="modal-actions"><button onclick="cerrarModal('modal-detalle-orden')">Cerrar</button></div>
   </div>
 </div>
 
@@ -322,6 +349,7 @@ function showTab(name) {
   if (name === 'formulas') cargarFormulas();
   else if (name === 'inventario') cargarInventario();
   else if (name === 'explosion') { cargarSelectorFormulas(); }
+  else if (name === 'ordenes') cargarOrdenes();
   else if (name === 'auditoria') cargarAuditoria();
   else if (name === 'usuarios') cargarUsuarios();
   else if (name === 'dashboard') cargarDashboard();
@@ -329,12 +357,45 @@ function showTab(name) {
 
 // --- DASHBOARD ---
 function cargarDashboard() {
-  Promise.all([api('/produccion/formulas'), api('/produccion/inventario')]).then(([formulas, inv]) => {
+  Promise.all([
+    api('/produccion/formulas'),
+    api('/produccion/inventario'),
+    api('/dashboard/estadisticas'),
+  ]).then(([formulas, inv, est]) => {
     const nf = Array.isArray(formulas) ? formulas.length : 0;
     const ni = Array.isArray(inv) ? inv.length : 0;
+    const totalOrdenes = est.total_ordenes || 0;
     document.getElementById('dashboard-resumen').innerHTML =
       `<div class="card" style="flex:1;min-width:200px"><h3>${nf}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>` +
-      `<div class="card" style="flex:1;min-width:200px"><h3>${ni}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>`;
+      `<div class="card" style="flex:1;min-width:200px"><h3>${ni}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>` +
+      `<div class="card" style="flex:1;min-width:200px"><h3>${totalOrdenes}</h3><p style="color:#666;font-size:0.85rem">Órdenes totales</p></div>`;
+    // Chart
+    const dias = (est.ordenes_por_dia || []);
+    const maxVal = Math.max(...dias.map(d => d.total), 1);
+    document.getElementById('dashboard-chart').innerHTML = dias.length
+      ? dias.map(d => {
+          const h = (d.total / maxVal) * 100;
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center">
+            <div style="width:100%;background:#1a237e;height:${h}px;border-radius:4px 4px 0 0;min-height:4px"></div>
+            <span style="font-size:0.7rem;margin-top:4px">${d.fecha.slice(5)}</span>
+            <span style="font-size:0.75rem;font-weight:600">${d.total}</span>
+          </div>`;
+        }).join('')
+      : '<p style="color:#999">Sin órdenes aún</p>';
+    // Productos
+    const prods = (est.productos_mas_demandados || []);
+    document.getElementById('dashboard-productos').innerHTML = prods.length
+      ? '<table><thead><tr><th>Producto</th><th>Veces</th><th>Total KG</th></tr></thead><tbody>' +
+        prods.map(p => `<tr><td>${p.id_formula} — ${p.nombre}</td><td>${p.veces_producido}</td><td>${p.total_kg} kg</td></tr>`).join('') +
+        '</tbody></table>'
+      : '<p style="color:#999">Sin datos aún</p>';
+    // Materiales
+    const mats = (est.materiales_mas_requeridos || []);
+    document.getElementById('dashboard-materiales').innerHTML = mats.length
+      ? '<table><thead><tr><th>SKU</th><th>Nombre</th><th>Total requerido</th></tr></thead><tbody>' +
+        mats.map(m => `<tr><td>${m.sku}</td><td>${m.nombre}</td><td>${m.total_requerido_kg} kg</td></tr>`).join('') +
+        '</tbody></table>'
+      : '<p style="color:#999">Sin datos aún</p>';
   });
 }
 
@@ -489,7 +550,7 @@ function calcularExplosion() {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
     document.getElementById('resultado-explosion').style.display = '';
     document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-      `<tr><td>${r.orden || '-'}</td><td>${r.sku}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
+      `<tr><td>${r.orden || '-'}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
     ).join('');
   });
 }
@@ -546,7 +607,7 @@ function cancelarBatchExcel() {
 function mostrarResultadosBatch(data) {
   document.getElementById('resultado-explosion').style.display = '';
   document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-    `<tr><td>${r.orden}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
+    `<tr><td>${r.orden}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
   ).join('');
 }
 
@@ -565,6 +626,48 @@ function cargarAuditoria() {
 }
 
 // --- USUARIOS ---
+// --- ORDENES ---
+function cargarOrdenes() {
+  const el = document.getElementById('loading-ordenes'); el.style.display = 'block';
+  document.getElementById('tabla-ordenes').style.display = 'none';
+  api('/ordenes').then(data => {
+    el.style.display = 'none';
+    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay órdenes registradas.'; return; }
+    document.getElementById('tabla-ordenes').style.display = '';
+    const esAdmin = USUARIO.rol === 'admin';
+    document.getElementById('th-acciones-orden').classList.toggle('hidden', !esAdmin);
+    document.getElementById('tbody-ordenes').innerHTML = data.map(o =>
+      `<tr>
+        <td style="font-size:0.75rem;font-family:monospace">${o.id.slice(0,8)}…</td>
+        <td>${o.id_formula}</td>
+        <td>${o.nombre_formula}</td>
+        <td>${o.cantidad_kg} kg</td>
+        <td style="font-size:0.8rem">${o.usuario || '-'}</td>
+        <td style="font-size:0.8rem">${o.creado_en ? new Date(o.creado_en).toLocaleString() : '-'}</td>
+        <td style="font-size:0.8rem"><a href="#" onclick="verDetalleOrden('${o.id}')">${o.cantidad_componentes || 'Ver'}</a></td>
+        <td>${esAdmin ? `<button class="danger" onclick="eliminarOrden('${o.id}')" style="font-size:0.8rem">Eliminar</button>` : '-'}</td>
+      </tr>`
+    ).join('');
+  });
+}
+
+function verDetalleOrden(id) {
+  api(`/ordenes/${id}`).then(o => {
+    if (o.error) { toast(o.error, 'error'); return; }
+    const detalles = (o.detalles || []).map(d =>
+      `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${d.nota || ''}</td></tr>`
+    ).join('');
+    document.getElementById('modal-detalle-orden-body').innerHTML = detalles;
+    document.getElementById('modal-detalle-orden-title').textContent = `Orden ${id.slice(0,8)}… — ${o.nombre_formula}`;
+    document.getElementById('modal-detalle-orden').classList.add('open');
+  });
+}
+
+function eliminarOrden(id) {
+  if (!confirm(`Eliminar orden ${id.slice(0,8)}…?`)) return;
+  api(`/ordenes/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+}
+
 function cargarUsuarios() {
   api('/usuarios').then(data => {
     if (!Array.isArray(data)) return;
