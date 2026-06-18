@@ -24,7 +24,9 @@ class ItemInventario:
 @dataclass(frozen=True)
 class ResultadoExplosion:
     sku: str
+    nombre: str
     requerido_kg: float
     disponible_kg: float
     faltante_kg: float
     cubierto: bool
+    nota: str = ""

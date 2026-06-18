@@ -189,7 +189,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   </div>
   <div id="resultado-explosion" style="display:none">
     <div class="card"><h2>Resultados</h2>
-      <table><thead><tr><th>Orden</th><th>SKU</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th></tr></thead>
+      <table><thead><tr><th>Orden</th><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead>
       <tbody id="tbody-resultados"></tbody></table>
     </div>
   </div>
@@ -489,7 +489,7 @@ function calcularExplosion() {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
     document.getElementById('resultado-explosion').style.display = '';
     document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-      `<tr><td>${r.orden || '-'}</td><td>${r.sku}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td></tr>`
+      `<tr><td>${r.orden || '-'}</td><td>${r.sku}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
     ).join('');
   });
 }
@@ -546,7 +546,7 @@ function cancelarBatchExcel() {
 function mostrarResultadosBatch(data) {
   document.getElementById('resultado-explosion').style.display = '';
   document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-    `<tr><td>${r.orden}</td><td>${r.sku || '-'}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td></tr>`
+    `<tr><td>${r.orden}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
   ).join('');
 }
 
