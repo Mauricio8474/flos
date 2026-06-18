@@ -1,5 +1,6 @@
 ﻿import io
 import logging
+import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -194,6 +195,26 @@ def listar_formulas() -> list[dict]:
     return [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
 
 
+@app.get("/produccion/formulas/excel", dependencies=[Depends(obtener_usuario_actual)])
+def descargar_formulas_excel() -> StreamingResponse:
+    todas = _repo_formula().listar()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "formulas"
+    ws.append(["REFERENCIA PRODUCTO TERMINADO", "MP", "MP POR REF", "fórmula en Kg"])
+    for ref, f in sorted(todas.items()):
+        for c in f.componentes:
+            ws.append([ref, f.nombre, c.sku, c.porcentaje])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=formulas.xlsx"},
+    )
+
+
 @app.get("/produccion/formulas/{id_formula}", dependencies=[Depends(obtener_usuario_actual)])
 def obtener_formula(id_formula: str) -> dict:
     f = _repo_formula().obtener(id_formula)
@@ -231,14 +252,36 @@ def eliminar_formula(id_formula: str, usuario: dict = Depends(obtener_usuario_ac
 
 
 @app.post("/produccion/cargar-formulas", dependencies=[Depends(requerir_rol("admin", "ingenieria"))])
-def cargar_formulas(usuario: dict = Depends(obtener_usuario_actual)) -> dict:
-    adapter = ExcelFormulasAdapter()
-    formulas = adapter.leer_formulas("formulas.xlsx")
+def cargar_formulas(
+    archivo: UploadFile = File(...),
+    columna_id: int | None = Form(None),
+    columna_mp: int | None = Form(None),
+    columna_sku: int | None = Form(None),
+    columna_kg: int | None = Form(None),
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> dict:
+    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(archivo.file.read())
+        tmp_path = tmp.name
+
+    mapeo = {}
+    if columna_id is not None:
+        mapeo["ID"] = columna_id
+    if columna_mp is not None:
+        mapeo["MP"] = columna_mp
+    if columna_sku is not None:
+        mapeo["SKU"] = columna_sku
+    if columna_kg is not None:
+        mapeo["KG"] = columna_kg
+
+    adapter = ExcelFormulasAdapter(mapeo=mapeo)
+    formulas = adapter.leer_formulas(tmp_path)
     repo = _repo_formula()
     for ref, formula in formulas.items():
         repo.guardar(ref, formula)
+    os.unlink(tmp_path)
     _auditar("formula", "MASIVO", "CARGAR", f"{len(formulas)} formulas desde Excel", usuario["sub"])
-    return {"mensaje": f"{len(formulas)} formulas cargadas desde formulas.xlsx"}
+    return {"mensaje": f"{len(formulas)} formulas cargadas"}
 
 
 # ---------------------------------------------------------------------------
@@ -249,16 +292,24 @@ def cargar_inventario(
     archivo: UploadFile = File(...),
     fila_encabezados: int = Form(1),
     columna_sku: str | None = Form(None),
+    columna_nombre: str | None = Form(None),
     columna_cantidad: str | None = Form(None),
+    columna_costo: str | None = Form(None),
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> dict:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
         tmp_path = tmp.name
 
-    mapeo = None
-    if columna_sku and columna_cantidad:
-        mapeo = {"SKU": columna_sku, "Cantidad_KG": columna_cantidad}
+    mapeo = {}
+    if columna_sku:
+        mapeo["SKU"] = columna_sku
+    if columna_nombre:
+        mapeo["Nombre"] = columna_nombre
+    if columna_cantidad:
+        mapeo["Cantidad_KG"] = columna_cantidad
+    if columna_costo:
+        mapeo["CostoUnitario"] = columna_costo
 
     adapter = ExcelInventarioAdapter(fila_encabezados=fila_encabezados, mapeo=mapeo)
     inventario = adapter.leer_inventario(tmp_path)
@@ -268,8 +319,17 @@ def cargar_inventario(
 
 
 @app.get("/produccion/inventario", dependencies=[Depends(obtener_usuario_actual)])
-def obtener_inventario() -> dict[str, float]:
-    return _repo_inventario().obtener_todos()
+def obtener_inventario() -> list[dict]:
+    items = _repo_inventario().obtener_todos()
+    return [
+        {
+            "sku": i.sku,
+            "nombre": i.nombre,
+            "cantidad_kg": i.cantidad_kg,
+            "costo_unitario": i.costo_unitario,
+        }
+        for i in items
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +340,10 @@ def listar_auditoria(limite: int = 100) -> list[dict]:
     return _repo_auditoria().listar(limite)
 
 
+def _inventario_a_dict(items: list) -> dict[str, float]:
+    return {i.sku: i.cantidad_kg for i in items}
+
+
 # ---------------------------------------------------------------------------
 # Explosión
 # ---------------------------------------------------------------------------
@@ -288,13 +352,13 @@ def calcular_explosion(id_formula: str = Form(...), cantidad_a_producir_kg: floa
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return [{"error": f"Formula '{id_formula}' no encontrada"}]
-    inventario = _repo_inventario().obtener_todos()
-    return [{"sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto} for r in CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)]
+    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
+    return [{"sku": r.sku, "requerido_kg": r.requerido_kg, "disponible_kg": r.disponible_kg, "faltante_kg": r.faltante_kg, "cubierto": r.cubierto} for r in CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)]
 
 
 @app.post("/produccion/calcular-explosion/batch", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
 def calcular_explosion_batch(ordenes: list[OrdenBatch]) -> list[dict]:
-    inventario = _repo_inventario().obtener_todos()
+    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
     repo = _repo_formula()
     resultados = []
     for orden in ordenes:
@@ -353,8 +417,8 @@ def calcular_explosion_excel(id_formula: str = Form(...), cantidad_a_producir_kg
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    inventario = _repo_inventario().obtener_todos()
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)
+    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
+    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
     return _generar_excel_resultados(resultados, id_formula)
 
 
@@ -363,8 +427,8 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    inventario = _repo_inventario().obtener_todos()
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)
+    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
+    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
     return _generar_pdf_resultados(resultados, id_formula, cantidad_a_producir_kg)
 
 

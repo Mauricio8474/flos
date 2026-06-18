@@ -1,11 +1,11 @@
 ﻿from abc import ABC, abstractmethod
 
-from src.domain.models import ComponenteFormula, Formula
+from src.domain.models import ComponenteFormula, Formula, ItemInventario
 
 
 class PuertoInventario(ABC):
     @abstractmethod
-    def leer_inventario(self, ruta: str) -> dict[str, float]:
+    def leer_inventario(self, ruta: str) -> list[ItemInventario]:
         ...
 
 
@@ -35,11 +35,11 @@ class RepositorioFormula(ABC):
 
 class RepositorioInventario(ABC):
     @abstractmethod
-    def guardar_muchos(self, items: dict[str, float]) -> None:
+    def guardar_muchos(self, items: list[ItemInventario]) -> None:
         ...
 
     @abstractmethod
-    def obtener_todos(self) -> dict[str, float]:
+    def obtener_todos(self) -> list[ItemInventario]:
         ...
 
 

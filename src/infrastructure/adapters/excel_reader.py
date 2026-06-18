@@ -3,12 +3,10 @@
 import openpyxl
 
 from src.application.use_cases import PuertoFormulas, PuertoInventario
-from src.domain.models import ComponenteFormula, Formula
+from src.domain.models import ComponenteFormula, Formula, ItemInventario
 
 
 class ExcelInventarioAdapter(PuertoInventario):
-    COLUMNAS_REQUERIDAS = ("SKU", "Nombre", "Cantidad_KG")
-
     def __init__(
         self,
         fila_encabezados: int = 1,
@@ -17,7 +15,7 @@ class ExcelInventarioAdapter(PuertoInventario):
         self._fila_encabezados = fila_encabezados
         self._mapeo = mapeo or {}
 
-    def leer_inventario(self, ruta: str) -> dict[str, float]:
+    def leer_inventario(self, ruta: str) -> list[ItemInventario]:
         archivo = Path(ruta)
 
         if not archivo.exists():
@@ -41,48 +39,65 @@ class ExcelInventarioAdapter(PuertoInventario):
 
         encabezados = [str(c).strip() if c is not None else "" for c in filas[idx_header]]
 
-        if self._mapeo:
-            col_sku = self._mapeo.get("SKU", "SKU")
-            col_cant = self._mapeo.get("Cantidad_KG", "Cantidad_KG")
-        else:
-            col_sku = "SKU"
-            col_cant = "Cantidad_KG"
+        col_sku = self._mapeo.get("SKU", "SKU")
+        col_nombre = self._mapeo.get("Nombre", "Nombre")
+        col_cant = self._mapeo.get("Cantidad_KG", "Cantidad_KG")
+        col_costo = self._mapeo.get("CostoUnitario", "CostoUnitario")
 
         if col_sku not in encabezados:
-            raise ValueError(
-                f"Columna SKU ('{col_sku}') no encontrada. "
-                f"Columnas: {encabezados}"
-            )
+            raise ValueError(f"Columna SKU ('{col_sku}') no encontrada. Columnas: {encabezados}")
         if col_cant not in encabezados:
-            raise ValueError(
-                f"Columna de cantidad ('{col_cant}') no encontrada. "
-                f"Columnas: {encabezados}"
-            )
+            raise ValueError(f"Columna de cantidad ('{col_cant}') no encontrada. Columnas: {encabezados}")
 
         idx_sku = encabezados.index(col_sku)
+        idx_nombre = encabezados.index(col_nombre) if col_nombre in encabezados else None
         idx_cant = encabezados.index(col_cant)
-        inventario: dict[str, float] = {}
+        idx_costo = encabezados.index(col_costo) if col_costo in encabezados else None
+
+        agrupados: dict[str, ItemInventario] = {}
 
         for fila in filas[idx_header + 1:]:
             sku = str(fila[idx_sku]).strip() if fila[idx_sku] is not None else ""
             if not sku:
                 continue
 
+            nombre = str(fila[idx_nombre]).strip() if idx_nombre is not None and fila[idx_nombre] is not None else ""
+
             try:
                 cantidad = float(fila[idx_cant]) if fila[idx_cant] is not None else 0.0
             except (ValueError, TypeError):
                 cantidad = 0.0
 
-            inventario[sku] = round(inventario.get(sku, 0.0) + cantidad, 3)
+            try:
+                costo = float(fila[idx_costo]) if idx_costo is not None and fila[idx_costo] is not None else 0.0
+            except (ValueError, TypeError):
+                costo = 0.0
 
-        return inventario
+            if sku in agrupados:
+                existente = agrupados[sku]
+                agrupados[sku] = ItemInventario(
+                    sku=sku,
+                    nombre=nombre or existente.nombre,
+                    cantidad_kg=round(existente.cantidad_kg + cantidad, 3),
+                    costo_unitario=costo or existente.costo_unitario,
+                )
+            else:
+                agrupados[sku] = ItemInventario(
+                    sku=sku, nombre=nombre, cantidad_kg=round(cantidad, 3), costo_unitario=round(costo, 2),
+                )
+
+        return list(agrupados.values())
 
 
 class ExcelFormulasAdapter(PuertoFormulas):
     HOJA = "formulas"
-    COL_ID = 1  # B
-    COL_SKU = 3  # D
-    COL_KG = 11  # L
+    COL_ID = 1   # B  — REFERENCIA PRODUCTO TERMINADO
+    COL_MP = 4   # E  — MP (nombre)
+    COL_SKU = 3  # D  — MP POR REF
+    COL_KG = 11  # L  — fórmula en Kg
+
+    def __init__(self, mapeo: dict[str, int] | None = None) -> None:
+        self._mapeo = mapeo or {}
 
     def leer_formulas(self, ruta: str) -> dict[str, Formula]:
         archivo = Path(ruta)
@@ -97,23 +112,36 @@ class ExcelFormulasAdapter(PuertoFormulas):
         if not filas:
             raise ValueError("El archivo Excel no contiene datos")
 
+        col_id = self._mapeo.get("ID", self.COL_ID)
+        col_mp = self._mapeo.get("MP", self.COL_MP)
+        col_sku = self._mapeo.get("SKU", self.COL_SKU)
+        col_kg = self._mapeo.get("KG", self.COL_KG)
+
+        max_col = max(col_id, col_mp, col_sku, col_kg)
         encabezados = [str(c).strip() if c is not None else "" for c in filas[0]]
-        if len(encabezados) <= self.COL_KG:
+        if len(encabezados) <= max_col:
             raise ValueError(
                 f"Estructura de columnas inesperada. "
-                f"Se esperaban al menos {self.COL_KG + 1} columnas, se encontraron {len(encabezados)}"
+                f"Se esperaban al menos {max_col + 1} columnas, se encontraron {len(encabezados)}"
             )
 
         agrupadas: dict[str, list[ComponenteFormula]] = {}
+        nombres: dict[str, str] = {}
 
         for fila in filas[1:]:
-            ref = str(fila[self.COL_ID]).strip() if fila[self.COL_ID] is not None else ""
-            sku = str(fila[self.COL_SKU]).strip() if fila[self.COL_SKU] is not None else ""
-            kg = fila[self.COL_KG]
-
-            if not ref or not sku:
+            ref = str(fila[col_id]).strip() if fila[col_id] is not None else ""
+            if not ref:
                 continue
 
+            if ref not in nombres:
+                mp = str(fila[col_mp]).strip() if fila[col_mp] is not None else ref
+                nombres[ref] = mp
+
+            sku = str(fila[col_sku]).strip() if fila[col_sku] is not None else ""
+            if not sku:
+                continue
+
+            kg = fila[col_kg]
             try:
                 porcentaje = float(kg) if kg is not None else 0.0
             except (ValueError, TypeError):
@@ -124,6 +152,6 @@ class ExcelFormulasAdapter(PuertoFormulas):
             agrupadas[ref].append(ComponenteFormula(sku=sku, porcentaje=porcentaje))
 
         return {
-            ref: Formula(nombre=ref, componentes=tuple(comps))
+            ref: Formula(nombre=nombres[ref], componentes=tuple(comps))
             for ref, comps in agrupadas.items()
         }

@@ -14,6 +14,14 @@ class Formula:
 
 
 @dataclass(frozen=True)
+class ItemInventario:
+    sku: str
+    nombre: str
+    cantidad_kg: float
+    costo_unitario: float
+
+
+@dataclass(frozen=True)
 class ResultadoExplosion:
     sku: str
     requerido_kg: float

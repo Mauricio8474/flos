@@ -4,6 +4,7 @@ from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_en
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioUsuario
+from src.domain.models import ItemInventario
 from src.domain.models import ComponenteFormula, Formula
 
 Base = declarative_base()
@@ -29,7 +30,9 @@ class InventarioORM(Base):
     __tablename__ = "inventario"
 
     sku = Column(String, primary_key=True)
+    nombre = Column(String, default="")
     cantidad_kg = Column(Float, nullable=False, default=0.0)
+    costo_unitario = Column(Float, default=0.0)
 
 
 class PostgresRepositorioFormula(RepositorioFormula):
@@ -189,21 +192,41 @@ class PostgresRepositorioInventario(RepositorioInventario):
     def __init__(self, session_factory: sessionmaker) -> None:
         self._sf = session_factory
 
-    def guardar_muchos(self, items: dict[str, float]) -> None:
+    def guardar_muchos(self, items: list[ItemInventario]) -> None:
         with self._sf() as session:
-            for sku, cantidad in items.items():
-                session.merge(InventarioORM(sku=sku, cantidad_kg=cantidad))
+            for item in items:
+                session.merge(
+                    InventarioORM(
+                        sku=item.sku,
+                        nombre=item.nombre,
+                        cantidad_kg=item.cantidad_kg,
+                        costo_unitario=item.costo_unitario,
+                    )
+                )
             session.commit()
 
-    def obtener_todos(self) -> dict[str, float]:
+    def obtener_todos(self) -> list[ItemInventario]:
         with self._sf() as session:
-            return {
-                row.sku: row.cantidad_kg
-                for row in session.query(InventarioORM).all()
-            }
+            rows = session.query(InventarioORM).order_by(InventarioORM.sku).all()
+            return [
+                ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario)
+                for r in rows
+            ]
 
 
 def init_db(database_url: str) -> sessionmaker:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
+
+    # Migrate existing tables adding new columns if missing
+    with engine.connect() as conn:
+        from sqlalchemy import inspect, text
+        inspector = inspect(conn)
+        columns = {c["name"] for c in inspector.get_columns("inventario")}
+        if "nombre" not in columns:
+            conn.execute(text("ALTER TABLE inventario ADD COLUMN nombre VARCHAR DEFAULT ''"))
+        if "costo_unitario" not in columns:
+            conn.execute(text("ALTER TABLE inventario ADD COLUMN costo_unitario FLOAT DEFAULT 0.0"))
+        conn.commit()
+
     return sessionmaker(bind=engine)
