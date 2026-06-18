@@ -1,8 +1,11 @@
-﻿from pathlib import Path
+﻿import io
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import openpyxl
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.domain.models import ComponenteFormula, Formula
@@ -170,6 +173,40 @@ def calcular_explosion(
         }
         for r in resultados
     ]
+
+
+@app.post("/produccion/calcular-explosion/excel")
+def calcular_explosion_excel(
+    id_formula: str = Form(...),
+    cantidad_a_producir_kg: float = Form(...),
+) -> StreamingResponse:
+    formula = _repo_formula().obtener(id_formula)
+    if not formula:
+        return StreamingResponse(
+            iter([b"Formula no encontrada"]),
+            media_type="text/plain",
+            status_code=404,
+        )
+
+    inventario = _repo_inventario().obtener_todos()
+    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Explosion"
+    ws.append(["SKU", "Requerido_KG", "Disponible_KG", "Faltante_KG", "Cubierto"])
+    for r in resultados:
+        ws.append([r.sku, r.requerido_kg, r.disponible_kg, r.faltante_kg, r.cubierto])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=explosion_{id_formula}.xlsx"},
+    )
 
 
 if __name__ == "__main__":
