@@ -6,8 +6,10 @@
 
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
-| `DATABASE_URL` | Conexión a PostgreSQL | `postgresql+psycopg://flos_admin:flos_secure_password@localhost:5432/flos_core` |
+| `DATABASE_URL` | Conexión a PostgreSQL | — (definido en `.env`) |
 | `EXCEL_DIR` | Directorio de archivos .xlsx | `.` (raíz del proyecto) |
+
+Copiar `.env.example` a `.env` y ajustar las credenciales antes de ejecutar.
 
 ### Docker Compose
 

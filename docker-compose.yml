@@ -5,16 +5,18 @@ services:
     image: postgres:15-alpine
     container_name: flos_production_db
     restart: always
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: flos_admin
-      POSTGRES_PASSWORD: flos_secure_password
-      POSTGRES_DB: flos_core
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - flos_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flos_admin -d flos_core"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -26,6 +28,8 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    env_file:
+      - .env
     depends_on:
       flos-db:
         condition: service_healthy
