@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  flos-db:
+    image: postgres:15-alpine
+    container_name: flos_production_db
+    restart: always
+    environment:
+      POSTGRES_USER: flos_admin
+      POSTGRES_PASSWORD: flos_secure_password
+      POSTGRES_DB: flos_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - flos_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flos_admin -d flos_core"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flos-app:
+    build: .
+    container_name: flos_backend_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      flos-db:
+        condition: service_healthy
+
+volumes:
+  flos_postgres_data:
