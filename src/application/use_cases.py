@@ -43,6 +43,24 @@ class RepositorioInventario(ABC):
         ...
 
 
+class RepositorioUsuario(ABC):
+    @abstractmethod
+    def guardar(self, username: str, password_hash: str, rol: str, nombre: str, activo: bool = True) -> None:
+        ...
+
+    @abstractmethod
+    def obtener(self, username: str) -> dict | None:
+        ...
+
+    @abstractmethod
+    def listar(self) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def existe_admin(self) -> bool:
+        ...
+
+
 class RepositorioAuditoria(ABC):
     @abstractmethod
     def registrar(self, entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:

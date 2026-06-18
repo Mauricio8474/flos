@@ -9,6 +9,9 @@
 body { background: #f0f2f5; color: #333; }
 header { background: #1a237e; color: #fff; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
 header h1 { font-size: 1.3rem; }
+header .user-info { font-size: 0.8rem; opacity: 0.8; display: flex; align-items: center; gap: 0.5rem; }
+header .user-info .rol-badge { background: #ffd54f; color: #1a237e; padding: 0.15rem 0.5rem; border-radius: 10px; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; }
+header .user-info button { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 0.3rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 nav { background: #283593; padding: 0 2rem; display: flex; gap: 0.5rem; }
 nav button { background: transparent; color: #c5cae9; border: none; padding: 0.75rem 1.2rem; cursor: pointer; font-size: 0.9rem; border-bottom: 3px solid transparent; }
 nav button:hover { color: #fff; background: rgba(255,255,255,0.05); }
@@ -58,9 +61,8 @@ tr:hover td { background: #f5f5f5; }
 #app-screen { display: none; }
 #app-screen.active { display: block; }
 input[type="file"] { padding: 0.4rem; }
-.pagination { display: flex; gap: 0.3rem; justify-content: center; margin-top: 1rem; }
-.pagination button { padding: 0.3rem 0.7rem; font-size: 0.8rem; background: #e0e0e0; color: #333; }
-.pagination button.active { background: #1a237e; color: #fff; }
+.hidden { display: none !important; }
+textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; width: 100%; }
 </style>
 </head>
 <body>
@@ -71,62 +73,62 @@ input[type="file"] { padding: 0.4rem; }
       <h2>Flos MES</h2>
       <p>Manufacturing Execution System</p>
     </div>
+    <div class="form-group" style="margin-bottom:0.8rem">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="admin" style="width:100%">
+    </div>
     <div class="form-group" style="margin-bottom:1rem">
-      <label>API Key</label>
-      <input type="password" id="api-key-input" placeholder="Ingrese su API Key" style="width:100%">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="Contraseña" style="width:100%">
     </div>
     <button onclick="login()" style="width:100%">Ingresar</button>
+    <p id="login-error" style="color:#c62828;font-size:0.85rem;margin-top:0.5rem;text-align:center;display:none"></p>
   </div>
 </div>
 
 <div id="app-screen">
 <header>
   <h1>Flos MES</h1>
-  <span id="user-badge" style="font-size:0.8rem;opacity:0.8"></span>
+  <div class="user-info">
+    <span id="user-name"></span>
+    <span class="rol-badge" id="user-rol-badge"></span>
+    <button onclick="logout()">Salir</button>
+  </div>
 </header>
-<nav>
+<nav id="main-nav">
   <button class="active" onclick="showTab('dashboard')">Dashboard</button>
   <button onclick="showTab('formulas')">Fórmulas</button>
   <button onclick="showTab('inventario')">Inventario</button>
   <button onclick="showTab('explosion')">Explosión</button>
-  <button onclick="showTab('auditoria')">Auditoría</button>
+  <button id="nav-auditoria" onclick="showTab('auditoria')">Auditoría</button>
+  <button id="nav-usuarios" onclick="showTab('usuarios')">Usuarios</button>
 </nav>
 <main>
 
 <section id="tab-dashboard" class="active">
-  <div class="card">
-    <h2>Resumen</h2>
-    <div id="dashboard-resumen" style="display:flex;gap:1rem;flex-wrap:wrap">Cargando...</div>
-  </div>
-  <div class="card">
-    <h2>Últimas explosiones</h2>
-    <div id="dashboard-ultimos">Seleccione una opción del menú para comenzar.</div>
-  </div>
+  <div class="card"><h2>Resumen</h2><div id="dashboard-resumen" style="display:flex;gap:1rem;flex-wrap:wrap">Cargando...</div></div>
 </section>
 
 <section id="tab-formulas">
   <div class="card">
     <h2>Fórmulas</h2>
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
-      <button onclick="abrirModalFormula()">+ Nueva fórmula</button>
-      <button class="success" onclick="cargarFormulasExcel()">Cargar desde Excel</button>
+      <button id="btn-nueva-formula" onclick="abrirModalFormula()">+ Nueva fórmula</button>
+      <button id="btn-cargar-formulas" class="success" onclick="cargarFormulasExcel()">Cargar desde Excel</button>
     </div>
     <div id="loading-formulas" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <table id="tabla-formulas" style="display:none">
-      <thead><tr><th>ID</th><th>Nombre</th><th>Componentes</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>ID</th><th>Nombre</th><th>Componentes</th><th id="th-acciones">Acciones</th></tr></thead>
       <tbody id="tbody-formulas"></tbody>
     </table>
   </div>
 </section>
 
 <section id="tab-inventario">
-  <div class="card">
+  <div class="card" id="card-cargar-inv">
     <h2>Cargar inventario</h2>
     <div class="form-row">
-      <div class="form-group">
-        <label>Archivo Excel (.xlsx)</label>
-        <input type="file" id="inv-file" accept=".xlsx">
-      </div>
+      <div class="form-group"><label>Archivo Excel (.xlsx)</label><input type="file" id="inv-file" accept=".xlsx"></div>
       <button onclick="subirInventario()">Cargar</button>
     </div>
   </div>
@@ -142,49 +144,45 @@ input[type="file"] { padding: 0.4rem; }
 
 <section id="tab-explosion">
   <div class="card">
-    <h2>Calcular explosión simple</h2>
+    <h2>Calcular explosión</h2>
     <div class="form-row">
-      <div class="form-group">
-        <label>Fórmula</label>
-        <select id="explosion-formula"></select>
-      </div>
-      <div class="form-group">
-        <label>Cantidad (kg)</label>
-        <input type="number" id="explosion-cantidad" value="100" min="1" step="0.1">
-      </div>
+      <div class="form-group"><label>Fórmula</label><select id="explosion-formula"></select></div>
+      <div class="form-group"><label>Cantidad (kg)</label><input type="number" id="explosion-cantidad" value="100" min="1" step="0.1"></div>
       <button onclick="calcularExplosion()">Calcular</button>
-      <button class="success" onclick="descargarExcel()">Descargar Excel</button>
-      <button class="success" onclick="descargarPDF()">Descargar PDF</button>
+      <button class="success" onclick="descargarExcel()">Excel</button>
+      <button class="success" onclick="descargarPDF()">PDF</button>
     </div>
   </div>
   <div class="card">
     <h2>Explosión batch</h2>
-    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
-      <div class="form-group" style="flex:1">
-        <label>Órdenes (JSON)</label>
-        <textarea id="batch-input" rows="4" style="width:100%;padding:0.5rem;font-family:monospace;font-size:0.85rem;border:1px solid #ccc;border-radius:4px">[{"id_formula": "AMC2705", "cantidad": 100}]</textarea>
-      </div>
-    </div>
+    <div style="margin-bottom:0.5rem"><textarea id="batch-input" rows="4">[{"id_formula": "AMC2705", "cantidad": 100}]</textarea></div>
     <button onclick="calcularBatch()">Ejecutar batch</button>
   </div>
   <div id="resultado-explosion" style="display:none">
-    <div class="card">
-      <h2>Resultados</h2>
-      <table>
-        <thead><tr><th>SKU</th><th>Requerido (kg)</th><th>Disponible (kg)</th><th>Faltante (kg)</th><th>Estado</th></tr></thead>
-        <tbody id="tbody-resultados"></tbody>
-      </table>
+    <div class="card"><h2>Resultados</h2>
+      <table><thead><tr><th>Orden</th><th>SKU</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th></tr></thead>
+      <tbody id="tbody-resultados"></tbody></table>
     </div>
   </div>
 </section>
 
 <section id="tab-auditoria">
-  <div class="card">
-    <h2>Auditoría</h2>
+  <div class="card"><h2>Auditoría</h2>
     <div id="loading-auditoria" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <table id="tabla-auditoria" style="display:none">
       <thead><tr><th>ID</th><th>Entidad</th><th>Acción</th><th>Detalle</th><th>Usuario</th><th>Fecha</th></tr></thead>
       <tbody id="tbody-auditoria"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-usuarios">
+  <div class="card">
+    <h2>Usuarios</h2>
+    <button onclick="abrirModalUsuario()" style="margin-bottom:1rem">+ Nuevo usuario</button>
+    <table>
+      <thead><tr><th>Username</th><th>Nombre</th><th>Rol</th><th>Activo</th><th>Creado</th><th>Acciones</th></tr></thead>
+      <tbody id="tbody-usuarios"></tbody>
     </table>
   </div>
 </section>
@@ -198,142 +196,158 @@ input[type="file"] { padding: 0.4rem; }
   <div class="modal-content">
     <h2 id="modal-formula-title">Nueva fórmula</h2>
     <input type="hidden" id="formula-edit-id">
-    <div class="form-group" style="margin-bottom:0.8rem">
-      <label>ID</label>
-      <input type="text" id="formula-id" placeholder="F-001">
-    </div>
-    <div class="form-group" style="margin-bottom:0.8rem">
-      <label>Nombre</label>
-      <input type="text" id="formula-nombre" placeholder="Mi fórmula">
-    </div>
+    <div class="form-group" style="margin-bottom:0.8rem"><label>ID</label><input type="text" id="formula-id" placeholder="F-001"></div>
+    <div class="form-group" style="margin-bottom:0.8rem"><label>Nombre</label><input type="text" id="formula-nombre" placeholder="Mi fórmula"></div>
     <h3 style="font-size:0.9rem;margin-bottom:0.5rem;color:#1a237e">Componentes</h3>
     <div id="componentes-list"></div>
     <button onclick="agregarComponente()" style="background:#546e7a;font-size:0.8rem;margin-top:0.3rem">+ Agregar componente</button>
-    <div class="modal-actions">
-      <button onclick="cerrarModal('modal-formula')">Cancelar</button>
-      <button class="success" onclick="guardarFormula()">Guardar</button>
+    <div class="modal-actions"><button onclick="cerrarModal('modal-formula')">Cancelar</button><button class="success" onclick="guardarFormula()">Guardar</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal-usuario">
+  <div class="modal-content">
+    <h2 id="modal-usuario-title">Nuevo usuario</h2>
+    <input type="hidden" id="usuario-edit-username">
+    <div class="form-group" style="margin-bottom:0.8rem"><label>Username</label><input type="text" id="usuario-username" placeholder="jperez"></div>
+    <div class="form-group" style="margin-bottom:0.8rem"><label>Nombre</label><input type="text" id="usuario-nombre" placeholder="Juan Pérez"></div>
+    <div class="form-group" style="margin-bottom:0.8rem"><label>Contraseña</label><input type="password" id="usuario-password" placeholder="••••••••"></div>
+    <div class="form-group" style="margin-bottom:0.8rem"><label>Rol</label>
+      <select id="usuario-rol">
+        <option value="admin">Admin</option>
+        <option value="ingenieria">Ingeniería</option>
+        <option value="almacen">Almacén</option>
+        <option value="produccion">Producción</option>
+        <option value="consultor">Consultor</option>
+      </select>
     </div>
+    <div class="modal-actions"><button onclick="cerrarModal('modal-usuario')">Cancelar</button><button class="success" onclick="guardarUsuario()">Guardar</button></div>
   </div>
 </div>
 
 <script>
-let API_KEY = '';
+let TOKEN = '';
+let USUARIO = {};
 
 function toast(msg, type='info') {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.className = `toast ${type} show`;
-  setTimeout(() => t.classList.remove('show'), 3000);
+  const t = document.getElementById('toast'); t.textContent = msg;
+  t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 function api(path, opts={}) {
-  opts.headers = { ...opts.headers, 'X-API-Key': API_KEY };
+  opts.headers = { ...opts.headers, 'Authorization': `Bearer ${TOKEN}` };
   if (!(opts.body instanceof FormData)) {
     opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
   }
-  return fetch(path, opts).then(r => r.json().catch(() => ({error: r.statusText})));
+  return fetch(path, opts).then(r => {
+    if (r.status === 401) { logout(); throw new Error('Sesión expirada'); }
+    return r.json().catch(() => ({error: r.statusText}));
+  });
 }
 
 function login() {
-  const k = document.getElementById('api-key-input').value;
-  if (!k) { toast('Ingrese una API Key', 'error'); return; }
-  API_KEY = k;
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-screen').classList.add('active');
-  document.getElementById('user-badge').textContent = `API Key: ${k.slice(0,8)}...`;
-  cargarDashboard();
-  cargarFormulas();
-  cargarInventario();
-  cargarSelectorFormulas();
-  cargarAuditoria();
+  const user = document.getElementById('login-user').value;
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  if (!user || !pass) { errEl.textContent = 'Ingrese usuario y contraseña'; errEl.style.display = ''; return; }
+  fetch('/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: user, password: pass})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { errEl.textContent = d.error; errEl.style.display = ''; return; }
+    TOKEN = d.access_token;
+    USUARIO = { username: user, rol: d.rol, nombre: d.nombre };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').classList.add('active');
+    document.getElementById('user-name').textContent = d.nombre;
+    document.getElementById('user-rol-badge').textContent = d.rol;
+    ajustarUIPorRol();
+    cargarDashboard(); cargarFormulas(); cargarInventario();
+    cargarSelectorFormulas(); cargarAuditoria(); cargarUsuarios();
+  }).catch(() => { errEl.textContent = 'Error de conexión'; errEl.style.display = ''; });
+}
+
+function logout() {
+  TOKEN = ''; USUARIO = {};
+  document.getElementById('app-screen').classList.remove('active');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+function ajustarUIPorRol() {
+  const r = USUARIO.rol;
+  document.getElementById('nav-auditoria').classList.toggle('hidden', r !== 'admin');
+  document.getElementById('nav-usuarios').classList.toggle('hidden', r !== 'admin');
+  document.getElementById('btn-nueva-formula').classList.toggle('hidden', !['admin','ingenieria'].includes(r));
+  document.getElementById('btn-cargar-formulas').classList.toggle('hidden', !['admin','ingenieria'].includes(r));
+  document.getElementById('th-acciones').classList.toggle('hidden', !['admin','ingenieria'].includes(r));
+  document.getElementById('card-cargar-inv').classList.toggle('hidden', !['admin','ingenieria','almacen'].includes(r));
 }
 
 function showTab(name) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
-  document.querySelector(`nav button[onclick*="${name}"]`)?.classList.add('active');
+  document.querySelector(`nav button[onclick*="'${name}'"]`)?.classList.add('active');
   document.getElementById(`tab-${name}`)?.classList.add('active');
 }
 
 // --- DASHBOARD ---
 function cargarDashboard() {
-  Promise.all([
-    api('/produccion/formulas'),
-    api('/produccion/inventario'),
-  ]).then(([formulas, inventario]) => {
-    const numFormulas = Array.isArray(formulas) ? formulas.length : 0;
-    const numSKUs = inventario && typeof inventario === 'object' ? Object.keys(inventario).length : 0;
-    document.getElementById('dashboard-resumen').innerHTML = `
-      <div class="card" style="flex:1;min-width:200px"><h3>${numFormulas}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>
-      <div class="card" style="flex:1;min-width:200px"><h3>${numSKUs}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>
-    `;
+  Promise.all([api('/produccion/formulas'), api('/produccion/inventario')]).then(([formulas, inv]) => {
+    const nf = Array.isArray(formulas) ? formulas.length : 0;
+    const ni = inv && typeof inv === 'object' ? Object.keys(inv).length : 0;
+    document.getElementById('dashboard-resumen').innerHTML =
+      `<div class="card" style="flex:1;min-width:200px"><h3>${nf}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>` +
+      `<div class="card" style="flex:1;min-width:200px"><h3>${ni}</h3><p style="color:#666;font-size:0.85rem">SKUs en inventario</p></div>`;
   });
 }
 
 // --- FORMULAS ---
 function cargarFormulas() {
-  document.getElementById('loading-formulas').style.display = 'block';
+  const el = document.getElementById('loading-formulas'); el.style.display = 'block';
   document.getElementById('tabla-formulas').style.display = 'none';
   api('/produccion/formulas').then(data => {
-    document.getElementById('loading-formulas').style.display = 'none';
-    if (!Array.isArray(data) || data.length === 0) {
-      document.getElementById('loading-formulas').textContent = 'No hay fórmulas registradas.';
-      return;
-    }
+    el.style.display = 'none';
+    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay fórmulas registradas.'; return; }
     document.getElementById('tabla-formulas').style.display = '';
-    document.getElementById('tbody-formulas').innerHTML = data.map(f => `
-      <tr>
-        <td><strong>${f.id}</strong></td>
-        <td>${f.nombre}</td>
-        <td>${f.componentes.length} componentes</td>
-        <td style="display:flex;gap:0.3rem">
-          <button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button>
-          <button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button>
-        </td>
-      </tr>
-    `).join('');
+    const puedeEditar = ['admin','ingenieria'].includes(USUARIO.rol);
+    document.getElementById('tbody-formulas').innerHTML = data.map(f =>
+      `<tr><td><strong>${f.id}</strong></td><td>${f.nombre}</td><td>${f.componentes.length} componentes</td>` +
+      (puedeEditar ? `<td style="display:flex;gap:0.3rem"><button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button><button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button></td>` : '<td>-</td>') +
+      `</tr>`
+    ).join('');
   });
 }
 
 function cargarSelectorFormulas() {
   api('/produccion/formulas').then(data => {
     const sel = document.getElementById('explosion-formula');
-    if (Array.isArray(data)) {
-      sel.innerHTML = data.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
-    }
+    if (Array.isArray(data)) sel.innerHTML = data.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
   });
 }
 
-function abrirModalFormula(data) {
-  document.getElementById('formula-edit-id').value = data ? data.id : '';
-  document.getElementById('formula-id').value = data ? data.id : '';
-  document.getElementById('formula-id').readOnly = !!data;
-  document.getElementById('formula-nombre').value = data ? data.nombre : '';
-  document.getElementById('modal-formula-title').textContent = data ? 'Editar fórmula' : 'Nueva fórmula';
+function abrirModalFormula(f) {
+  document.getElementById('formula-edit-id').value = f ? f.id : '';
+  document.getElementById('formula-id').value = f ? f.id : '';
+  document.getElementById('formula-id').readOnly = !!f;
+  document.getElementById('formula-nombre').value = f ? f.nombre : '';
+  document.getElementById('modal-formula-title').textContent = f ? 'Editar fórmula' : 'Nueva fórmula';
   document.getElementById('componentes-list').innerHTML = '';
-  if (data && data.componentes) {
-    data.componentes.forEach(c => agregarComponente(c.sku, c.porcentaje));
-  } else {
-    agregarComponente();
-  }
+  if (f && f.componentes) f.componentes.forEach(c => agregarComponente(c.sku, c.porcentaje));
+  else agregarComponente();
   document.getElementById('modal-formula').classList.add('open');
 }
 
 function editarFormula(id) {
-  api(`/produccion/formulas/${id}`).then(f => {
-    if (f.error) { toast(f.error, 'error'); return; }
-    abrirModalFormula(f);
-  });
+  api(`/produccion/formulas/${id}`).then(f => { if (!f.error) abrirModalFormula(f); else toast(f.error, 'error'); });
 }
 
 function agregarComponente(sku='', pct='') {
   const d = document.getElementById('componentes-list');
-  const i = d.children.length;
-  const div = document.createElement('div');
-  div.className = 'comp-row';
-  div.innerHTML = `
-    <input type="text" placeholder="SKU" value="${sku}" class="comp-sku">
-    <input type="number" placeholder="%" value="${pct}" class="comp-pct" step="0.01" min="0" max="100" style="width:80px">
-    <button class="danger" onclick="this.parentElement.remove()" style="font-size:0.8rem">X</button>`;
+  const div = document.createElement('div'); div.className = 'comp-row';
+  div.innerHTML = `<input type="text" placeholder="SKU" value="${sku}" class="comp-sku"><input type="number" placeholder="%" value="${pct}" class="comp-pct" step="0.01" min="0" max="100" style="width:80px"><button class="danger" onclick="this.parentElement.remove()" style="font-size:0.8rem">X</button>`;
   d.appendChild(div);
 }
 
@@ -341,63 +355,37 @@ function guardarFormula() {
   const id = document.getElementById('formula-id').value.trim();
   const nombre = document.getElementById('formula-nombre').value.trim();
   if (!id || !nombre) { toast('ID y nombre requeridos', 'error'); return; }
-
   const comps = [];
   document.querySelectorAll('.comp-row').forEach(row => {
     const sku = row.querySelector('.comp-sku').value.trim();
     const pct = parseFloat(row.querySelector('.comp-pct').value);
     if (sku && !isNaN(pct)) comps.push({sku, porcentaje: pct});
   });
-  if (comps.length === 0) { toast('Agregue al menos un componente', 'error'); return; }
-
-  const body = JSON.stringify({id, nombre, componentes: comps});
+  if (!comps.length) { toast('Agregue al menos un componente', 'error'); return; }
   const editId = document.getElementById('formula-edit-id').value;
-  const method = editId ? 'PUT' : 'POST';
-  const url = editId ? `/produccion/formulas/${editId}` : '/produccion/formulas';
-
-  fetch(url, {method, headers: {'Content-Type':'application/json','X-API-Key':API_KEY}, body})
-    .then(r => r.json()).then(d => {
-      if (d.error) { toast(d.error, 'error'); return; }
-      toast(d.mensaje, 'success');
-      cerrarModal('modal-formula');
-      cargarFormulas();
-      cargarSelectorFormulas();
-    });
+  (editId ? api(`/produccion/formulas/${editId}`, {method:'PUT', body: JSON.stringify({id, nombre, componentes: comps})})
+          : api('/produccion/formulas', {method:'POST', body: JSON.stringify({id, nombre, componentes: comps})}))
+    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-formula'); cargarFormulas(); cargarSelectorFormulas(); });
 }
 
 function eliminarFormula(id) {
   if (!confirm(`Eliminar fórmula ${id}?`)) return;
-  fetch(`/produccion/formulas/${id}`, {method:'DELETE', headers:{'X-API-Key':API_KEY}})
-    .then(r => r.json()).then(d => {
-      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
-      cargarFormulas();
-      cargarSelectorFormulas();
-    });
+  api(`/produccion/formulas/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarFormulas(); cargarSelectorFormulas(); });
 }
 
 function cargarFormulasExcel() {
-  fetch('/produccion/cargar-formulas', {method:'POST', headers:{'X-API-Key':API_KEY}})
-    .then(r => r.json()).then(d => {
-      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
-      cargarFormulas();
-      cargarSelectorFormulas();
-    });
+  api('/produccion/cargar-formulas', {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarFormulas(); cargarSelectorFormulas(); });
 }
 
 // --- INVENTARIO ---
 function cargarInventario() {
-  document.getElementById('loading-inventario').style.display = 'block';
+  const el = document.getElementById('loading-inventario'); el.style.display = 'block';
   document.getElementById('tabla-inventario').style.display = 'none';
   api('/produccion/inventario').then(data => {
-    document.getElementById('loading-inventario').style.display = 'none';
-    if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
-      document.getElementById('loading-inventario').textContent = 'Inventario vacío. Cargue un archivo Excel.';
-      return;
-    }
+    el.style.display = 'none';
+    if (!data || typeof data !== 'object' || !Object.keys(data).length) { el.textContent = 'Inventario vacío.'; return; }
     document.getElementById('tabla-inventario').style.display = '';
-    document.getElementById('tbody-inventario').innerHTML = Object.entries(data)
-      .sort((a,b) => a[0].localeCompare(b[0]))
-      .map(([sku, cant]) => `<tr><td>${sku}</td><td>${cant} kg</td></tr>`).join('');
+    document.getElementById('tbody-inventario').innerHTML = Object.entries(data).sort((a,b) => a[0].localeCompare(b[0])).map(([s,c]) => `<tr><td>${s}</td><td>${c} kg</td></tr>`).join('');
   });
 }
 
@@ -405,11 +393,7 @@ function subirInventario() {
   const file = document.getElementById('inv-file').files[0];
   if (!file) { toast('Seleccione un archivo Excel', 'error'); return; }
   const fd = new FormData(); fd.append('archivo', file);
-  fetch('/produccion/cargar-inventario', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
-    .then(r => r.json()).then(d => {
-      toast(d.mensaje || d.error, d.error ? 'error' : 'success');
-      cargarInventario();
-    });
+  api('/produccion/cargar-inventario', {method:'POST', body:fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarInventario(); });
 }
 
 // --- EXPLOSION ---
@@ -417,116 +401,102 @@ function calcularExplosion() {
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
   if (!id) { toast('Seleccione una fórmula', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('id_formula', id);
-  fd.append('cantidad_a_producir_kg', cant);
-
-  fetch('/produccion/calcular-explosion', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
-    .then(r => r.json()).then(data => {
-      if (!Array.isArray(data)) { toast('Error al calcular', 'error'); return; }
-      if (data[0]?.error) { toast(data[0].error, 'error'); return; }
-      document.getElementById('resultado-explosion').style.display = '';
-      document.getElementById('tbody-resultados').innerHTML = data.map(r => `
-        <tr>
-          <td>${r.sku}</td>
-          <td>${r.requerido_kg} kg</td>
-          <td>${r.disponible_kg} kg</td>
-          <td>${r.faltante_kg} kg</td>
-          <td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td>
-        </tr>
-      `).join('');
-    });
+  const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
+  api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
+    if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
+    document.getElementById('resultado-explosion').style.display = '';
+    document.getElementById('tbody-resultados').innerHTML = data.map(r =>
+      `<tr><td>${r.orden || '-'}</td><td>${r.sku}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td></tr>`
+    ).join('');
+  });
 }
 
 function descargarExcel() {
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
-  const fd = new FormData();
-  fd.append('id_formula', id);
-  fd.append('cantidad_a_producir_kg', cant);
-
-  fetch('/produccion/calcular-explosion/excel', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
-    .then(r => r.blob()).then(blob => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `explosion_${id}.xlsx`;
-      a.click();
-    });
+  const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
+  fetch('/produccion/calcular-explosion/excel', {method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd})
+    .then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `explosion_${id}.xlsx`; a.click(); });
 }
-
 function descargarPDF() {
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
-  const fd = new FormData();
-  fd.append('id_formula', id);
-  fd.append('cantidad_a_producir_kg', cant);
-
-  fetch('/produccion/calcular-explosion/pdf', {method:'POST', headers:{'X-API-Key':API_KEY}, body:fd})
-    .then(r => r.blob()).then(blob => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `explosion_${id}.pdf`;
-      a.click();
-    });
+  const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
+  fetch('/produccion/calcular-explosion/pdf', {method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd})
+    .then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `explosion_${id}.pdf`; a.click(); });
 }
 
 function calcularBatch() {
   try {
     const ordenes = JSON.parse(document.getElementById('batch-input').value);
-    if (!Array.isArray(ordenes) || ordenes.length === 0) throw 'Debe ser un array no vacío';
-    fetch('/produccion/calcular-explosion/batch', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json', 'X-API-Key': API_KEY},
-      body: JSON.stringify(ordenes)
-    }).then(r => r.json()).then(data => {
+    if (!Array.isArray(ordenes) || !ordenes.length) throw 'Array vacío';
+    api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
       if (!Array.isArray(data)) { toast('Error en batch', 'error'); return; }
       document.getElementById('resultado-explosion').style.display = '';
-      document.getElementById('tbody-resultados').innerHTML = data.map(r => `
-        <tr>
-          <td>${r.orden} - ${r.sku || ''}</td>
-          <td>${r.requerido_kg || '-'} ${r.requerido_kg ? 'kg' : ''}</td>
-          <td>${r.disponible_kg || '-'} ${r.disponible_kg ? 'kg' : ''}</td>
-          <td>${r.faltante_kg || '-'} ${r.faltante_kg ? 'kg' : ''}</td>
-          <td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td>
-        </tr>
-      `).join('');
+      document.getElementById('tbody-resultados').innerHTML = data.map(r =>
+        `<tr><td>${r.orden}</td><td>${r.sku || '-'}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td></tr>`
+      ).join('');
     });
-  } catch(e) {
-    toast('JSON inválido: ' + e, 'error');
-  }
+  } catch(e) { toast('JSON inválido', 'error'); }
 }
 
 // --- AUDITORIA ---
 function cargarAuditoria() {
-  document.getElementById('loading-auditoria').style.display = 'block';
+  const el = document.getElementById('loading-auditoria'); el.style.display = 'block';
   document.getElementById('tabla-auditoria').style.display = 'none';
   api('/produccion/auditoria').then(data => {
-    document.getElementById('loading-auditoria').style.display = 'none';
-    if (!Array.isArray(data) || data.length === 0) {
-      document.getElementById('loading-auditoria').textContent = 'No hay registros de auditoría.';
-      return;
-    }
+    el.style.display = 'none';
+    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay registros.'; return; }
     document.getElementById('tabla-auditoria').style.display = '';
-    document.getElementById('tbody-auditoria').innerHTML = data.map(r => `
-      <tr>
-        <td>${r.id}</td>
-        <td>${r.entidad}</td>
-        <td><span class="badge ${r.accion === 'ELIMINAR' ? 'fail' : 'ok'}">${r.accion}</span></td>
-        <td>${r.detalle}</td>
-        <td style="font-size:0.8rem">${r.usuario ? r.usuario.slice(0,12)+'...' : '-'}</td>
-        <td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td>
-      </tr>
-    `).join('');
+    document.getElementById('tbody-auditoria').innerHTML = data.map(r =>
+      `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td></tr>`
+    ).join('');
   });
+}
+
+// --- USUARIOS ---
+function cargarUsuarios() {
+  api('/usuarios').then(data => {
+    if (!Array.isArray(data)) return;
+    document.getElementById('tbody-usuarios').innerHTML = data.map(u =>
+      `<tr><td>${u.username}</td><td>${u.nombre}</td><td><span class="rol-badge" style="background:#e8eaf6;color:#1a237e;text-transform:uppercase">${u.rol}</span></td><td>${u.activo ? '✅' : '❌'}</td><td style="font-size:0.8rem">${u.creado_en ? new Date(u.creado_en).toLocaleDateString() : '-'}</td>` +
+      `<td style="display:flex;gap:0.3rem">${u.username !== 'admin' ? `<button class="danger" onclick="eliminarUsuario('${u.username}')" style="font-size:0.8rem">Desactivar</button>` : ''}</td></tr>`
+    ).join('');
+  });
+}
+
+function abrirModalUsuario(u) {
+  document.getElementById('usuario-edit-username').value = u ? u.username : '';
+  document.getElementById('usuario-username').value = u ? u.username : '';
+  document.getElementById('usuario-username').readOnly = !!u;
+  document.getElementById('usuario-nombre').value = u ? u.nombre : '';
+  document.getElementById('usuario-password').value = '';
+  document.getElementById('usuario-rol').value = u ? u.rol : 'produccion';
+  document.getElementById('modal-usuario-title').textContent = u ? 'Editar usuario' : 'Nuevo usuario';
+  document.getElementById('modal-usuario').classList.add('open');
+}
+
+function guardarUsuario() {
+  const username = document.getElementById('usuario-username').value.trim();
+  const nombre = document.getElementById('usuario-nombre').value.trim();
+  const password = document.getElementById('usuario-password').value;
+  const rol = document.getElementById('usuario-rol').value;
+  if (!username || !nombre || !password) { toast('Todos los campos requeridos', 'error'); return; }
+  const editUsername = document.getElementById('usuario-edit-username').value;
+  (editUsername ? api(`/usuarios/${editUsername}`, {method:'PUT', body: JSON.stringify({username, nombre, password, rol})})
+                : api('/usuarios', {method:'POST', body: JSON.stringify({username, nombre, password, rol})}))
+    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-usuario'); cargarUsuarios(); });
+}
+
+function eliminarUsuario(username) {
+  if (!confirm(`Desactivar usuario ${username}?`)) return;
+  api(`/usuarios/${username}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarUsuarios(); });
 }
 
 function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
 
-// Enter key login
-document.getElementById('api-key-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') login();
-});
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.getElementById('login-user').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 </script>
 </body>
 </html>

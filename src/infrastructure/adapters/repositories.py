@@ -3,7 +3,7 @@
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario
+from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioUsuario
 from src.domain.models import ComponenteFormula, Formula
 
 Base = declarative_base()
@@ -90,6 +90,51 @@ class PostgresRepositorioFormula(RepositorioFormula):
             session.delete(f)
             session.commit()
             return True
+
+
+class UsuarioORM(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    rol = Column(String, nullable=False)
+    nombre = Column(String, nullable=False)
+    activo = Column(Integer, default=1)
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PostgresRepositorioUsuario(RepositorioUsuario):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def guardar(self, username: str, password_hash: str, rol: str, nombre: str, activo: bool = True) -> None:
+        with self._sf() as session:
+            session.merge(
+                UsuarioORM(
+                    username=username, password_hash=password_hash,
+                    rol=rol, nombre=nombre, activo=1 if activo else 0,
+                )
+            )
+            session.commit()
+
+    def obtener(self, username: str) -> dict | None:
+        with self._sf() as session:
+            u = session.query(UsuarioORM).filter_by(username=username).first()
+            if not u:
+                return None
+            return {"id": u.id, "username": u.username, "password_hash": u.password_hash, "rol": u.rol, "nombre": u.nombre, "activo": u.activo}
+
+    def listar(self) -> list[dict]:
+        with self._sf() as session:
+            return [
+                {"id": u.id, "username": u.username, "rol": u.rol, "nombre": u.nombre, "activo": bool(u.activo), "creado_en": u.creado_en.isoformat() if u.creado_en else None}
+                for u in session.query(UsuarioORM).order_by(UsuarioORM.id).all()
+            ]
+
+    def existe_admin(self) -> bool:
+        with self._sf() as session:
+            return session.query(UsuarioORM).filter_by(rol="admin").first() is not None
 
 
 class AuditoriaORM(Base):
