@@ -1,7 +1,9 @@
-﻿from sqlalchemy import Column, Float, Integer, String, create_engine
+﻿from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from src.application.use_cases import RepositorioFormula, RepositorioInventario
+from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario
 from src.domain.models import ComponenteFormula, Formula
 
 Base = declarative_base()
@@ -88,6 +90,54 @@ class PostgresRepositorioFormula(RepositorioFormula):
             session.delete(f)
             session.commit()
             return True
+
+
+class AuditoriaORM(Base):
+    __tablename__ = "auditoria"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entidad = Column(String, nullable=False)
+    entidad_id = Column(String, nullable=False)
+    accion = Column(String, nullable=False)
+    detalle = Column(Text, default="")
+    usuario = Column(String, default="")
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PostgresRepositorioAuditoria(RepositorioAuditoria):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def registrar(self, entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
+        with self._sf() as session:
+            session.add(
+                AuditoriaORM(
+                    entidad=entidad, entidad_id=entidad_id,
+                    accion=accion, detalle=detalle, usuario=usuario,
+                )
+            )
+            session.commit()
+
+    def listar(self, limite: int = 100) -> list[dict]:
+        with self._sf() as session:
+            rows = (
+                session.query(AuditoriaORM)
+                .order_by(AuditoriaORM.id.desc())
+                .limit(limite)
+                .all()
+            )
+            return [
+                {
+                    "id": r.id,
+                    "entidad": r.entidad,
+                    "entidad_id": r.entidad_id,
+                    "accion": r.accion,
+                    "detalle": r.detalle,
+                    "usuario": r.usuario,
+                    "creado_en": r.creado_en.isoformat() if r.creado_en else None,
+                }
+                for r in rows
+            ]
 
 
 class PostgresRepositorioInventario(RepositorioInventario):

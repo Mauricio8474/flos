@@ -1,10 +1,9 @@
 ﻿import io
-from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import openpyxl
 import uvicorn
-from fastapi import Depends, FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Security, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -14,6 +13,7 @@ from src.domain.models import ComponenteFormula, Formula
 from src.domain.services import CalculadorMRP
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
+    PostgresRepositorioAuditoria,
     PostgresRepositorioFormula,
     PostgresRepositorioInventario,
     init_db,
@@ -42,6 +42,7 @@ def startup():
     app.state.sf = sf
     app.state.repo_formula = PostgresRepositorioFormula(sf)
     app.state.repo_inventario = PostgresRepositorioInventario(sf)
+    app.state.repo_auditoria = PostgresRepositorioAuditoria(sf)
 
 
 def _repo_formula() -> PostgresRepositorioFormula:
@@ -50,6 +51,14 @@ def _repo_formula() -> PostgresRepositorioFormula:
 
 def _repo_inventario() -> PostgresRepositorioInventario:
     return app.state.repo_inventario
+
+
+def _repo_auditoria() -> PostgresRepositorioAuditoria:
+    return app.state.repo_auditoria
+
+
+def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, api_key: str) -> None:
+    _repo_auditoria().registrar(entidad, entidad_id, accion, detalle, api_key)
 
 
 @app.get("/produccion/formulas", dependencies=[Depends(verificar_api_key)])
@@ -81,8 +90,8 @@ def obtener_formula(id_formula: str) -> dict:
     }
 
 
-@app.post("/produccion/formulas", dependencies=[Depends(verificar_api_key)])
-def crear_formula(body: FormulaInput) -> dict:
+@app.post("/produccion/formulas")
+def crear_formula(body: FormulaInput, api_key: str = Security(verificar_api_key)) -> dict:
     repo = _repo_formula()
     if repo.obtener(body.id):
         return {"error": f"La formula '{body.id}' ya existe"}
@@ -95,11 +104,12 @@ def crear_formula(body: FormulaInput) -> dict:
             ),
         ),
     )
+    _auditar("formula", body.id, "CREAR", f"{len(body.componentes)} componentes", api_key)
     return {"mensaje": f"Formula '{body.id}' creada", "componentes": len(body.componentes)}
 
 
-@app.put("/produccion/formulas/{id_formula}", dependencies=[Depends(verificar_api_key)])
-def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
+@app.put("/produccion/formulas/{id_formula}")
+def actualizar_formula(id_formula: str, body: FormulaInput, api_key: str = Security(verificar_api_key)) -> dict:
     repo = _repo_formula()
     if not repo.obtener(id_formula):
         return {"error": f"Formula '{id_formula}' no encontrada"}
@@ -112,28 +122,31 @@ def actualizar_formula(id_formula: str, body: FormulaInput) -> dict:
             ),
         ),
     )
+    _auditar("formula", id_formula, "ACTUALIZAR", f"{len(body.componentes)} componentes", api_key)
     return {"mensaje": f"Formula '{id_formula}' actualizada", "componentes": len(body.componentes)}
 
 
-@app.delete("/produccion/formulas/{id_formula}", dependencies=[Depends(verificar_api_key)])
-def eliminar_formula(id_formula: str) -> dict:
+@app.delete("/produccion/formulas/{id_formula}")
+def eliminar_formula(id_formula: str, api_key: str = Security(verificar_api_key)) -> dict:
     if _repo_formula().eliminar(id_formula):
+        _auditar("formula", id_formula, "ELIMINAR", "", api_key)
         return {"mensaje": f"Formula '{id_formula}' eliminada"}
     return {"error": f"Formula '{id_formula}' no encontrada"}
 
 
-@app.post("/produccion/cargar-formulas", dependencies=[Depends(verificar_api_key)])
-def cargar_formulas() -> dict:
+@app.post("/produccion/cargar-formulas")
+def cargar_formulas(api_key: str = Security(verificar_api_key)) -> dict:
     adapter = ExcelFormulasAdapter()
     formulas = adapter.leer_formulas("formulas.xlsx")
     repo = _repo_formula()
     for ref, formula in formulas.items():
         repo.guardar(ref, formula)
+    _auditar("formula", "MASIVO", "CARGAR", f"{len(formulas)} formulas desde Excel", api_key)
     return {"mensaje": f"{len(formulas)} formulas cargadas desde formulas.xlsx"}
 
 
-@app.post("/produccion/cargar-inventario", dependencies=[Depends(verificar_api_key)])
-def cargar_inventario(archivo: UploadFile = File(...)) -> dict:
+@app.post("/produccion/cargar-inventario")
+def cargar_inventario(archivo: UploadFile = File(...), api_key: str = Security(verificar_api_key)) -> dict:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(archivo.file.read())
         tmp_path = tmp.name
@@ -141,12 +154,18 @@ def cargar_inventario(archivo: UploadFile = File(...)) -> dict:
     adapter = ExcelInventarioAdapter()
     inventario = adapter.leer_inventario(tmp_path)
     _repo_inventario().guardar_muchos(inventario)
+    _auditar("inventario", "MASIVO", "CARGAR", f"{len(inventario)} SKUs desde Excel", api_key)
     return {"mensaje": f"Inventario actualizado: {len(inventario)} SKUs"}
 
 
 @app.get("/produccion/inventario", dependencies=[Depends(verificar_api_key)])
 def obtener_inventario() -> dict[str, float]:
     return _repo_inventario().obtener_todos()
+
+
+@app.get("/produccion/auditoria", dependencies=[Depends(verificar_api_key)])
+def listar_auditoria(limite: int = 100) -> list[dict]:
+    return _repo_auditoria().listar(limite)
 
 
 @app.post("/produccion/calcular-explosion", dependencies=[Depends(verificar_api_key)])

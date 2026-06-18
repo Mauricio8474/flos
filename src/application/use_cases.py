@@ -41,3 +41,13 @@ class RepositorioInventario(ABC):
     @abstractmethod
     def obtener_todos(self) -> dict[str, float]:
         ...
+
+
+class RepositorioAuditoria(ABC):
+    @abstractmethod
+    def registrar(self, entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
+        ...
+
+    @abstractmethod
+    def listar(self, limite: int = 100) -> list[dict]:
+        ...
