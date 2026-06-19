@@ -99,10 +99,15 @@ flos/
 - Lotes: código único definido por usuario
 
 ## Testing
-- No hay suite de pruebas definida aún.
+- **Framework:** pytest + httpx
+- **Tests unitarios:** 40 tests en `tests/` (modelos de dominio, servicios, Excel adapter)
+- **Ejecución:** `pytest tests/ -v`
 
-## Linting / Typecheck
-- No hay configuración de linter o typechecker.
+## CI/CD
+- **GitHub Actions:** `.github/workflows/ci.yml`
+- **Triggers:** push a develop/main/test, PR a main
+- **Pasos:** lint (ruff) → test (pytest con PostgreSQL) → build Docker
+- **Artefactos:** reporte JUnit de tests
 
 ## Critical Context
 - Puerto: 8001 (mapeado externamente)
