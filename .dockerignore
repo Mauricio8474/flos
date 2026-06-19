@@ -1,0 +1,15 @@
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.env
+.env.*
+*.xlsx
+*.md
+tests/
+.dockerignore
+AGENTS.md
+README.md
+docs/
+ejemplo_batch.xlsx
+test_excel_batch.py

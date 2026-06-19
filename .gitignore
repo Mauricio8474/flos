@@ -7,3 +7,4 @@ venv/
 *_prueba.xlsx
 *_real.xlsx
 _test_*.py
+docker-compose.override.yml

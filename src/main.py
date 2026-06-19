@@ -106,7 +106,13 @@ class OrdenBatch(BaseModel):
 @app.on_event("startup")
 def startup():
     import os
-    db_url = os.getenv("DATABASE_URL", "postgresql+psycopg2://flos_admin:flos_secure_password@localhost:5432/flos_core")
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not jwt_secret or jwt_secret in ("change-this-secret-in-production", "cambiar-esta-clave-en-produccion"):
+        logger.warning("JWT_SECRET no configurado o usa valor por defecto. ¡Cambiar en producción!")
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        logger.error("DATABASE_URL no configurada")
+        raise RuntimeError("DATABASE_URL environment variable is required")
     sf = init_db(db_url)
     app.state.sf = sf
     app.state.repo_formula = PostgresRepositorioFormula(sf)

@@ -38,6 +38,21 @@ uvicorn src.main:app --reload
 - **API:** http://localhost:8001/
 - **Documentación OpenAPI:** http://localhost:8001/docs
 
+## Producción
+
+```bash
+# Construir e iniciar servicios
+docker compose -f docker-compose.yml up -d --build
+
+# Ver logs
+docker compose -f docker-compose.yml logs -f
+
+# Detener
+docker compose -f docker-compose.yml down
+```
+
+Variables requeridas en `.env`: `DATABASE_URL`, `JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+
 ## Funcionalidades
 
 - **Fórmulas** — CRUD completo, carga masiva desde Excel (configurable por columnas)

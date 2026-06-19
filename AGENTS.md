@@ -9,7 +9,7 @@
 - **Backend:** Python 3.12+, FastAPI
 - **Base de datos:** PostgreSQL 15 (vía SQLAlchemy)
 - **Lectura de datos fuente:** OpenPyXL / Pandas (archivos `.xlsx`)
-- **Infraestructura:** Docker Compose (PostgreSQL + app)
+- **Infraestructura:** Docker Compose (PostgreSQL + app), perfil producción/desarrollo
 - **Archivos data actuales:**
   - `ERP Metarom.xlsx` — Módulo ERP
   - `formulas.xlsx` — Lógica de cálculos
@@ -20,7 +20,12 @@
 ```
 flos/
 ├── AGENTS.md
+├── Dockerfile
+├── Dockerfile.dev
 ├── docker-compose.yml
+├── docker-compose.override.yml
+├── .dockerignore
+├── .env.example
 ├── ERP Metarom.xlsx
 ├── formulas.xlsx
 ├── inventario.xlsx
@@ -108,6 +113,45 @@ flos/
 - **Triggers:** push a develop/main/test, PR a main
 - **Pasos:** lint (ruff) → test (pytest con PostgreSQL) → build Docker
 - **Artefactos:** reporte JUnit de tests
+
+## Deployment
+
+### Producción
+```bash
+# Construir y levantar (sin override de desarrollo)
+docker compose -f docker-compose.yml up -d --build
+
+# Ver estado
+docker compose -f docker-compose.yml ps
+
+# Logs
+docker compose -f docker-compose.yml logs -f
+
+# Detener
+docker compose -f docker-compose.yml down
+```
+
+### Desarrollo (con hot-reload)
+```bash
+# Usa docker-compose.override.yml automáticamente
+docker compose up -d --build
+```
+
+### Variables de entorno
+- `.env` — archivo local (no commiteado)
+- `.env.example` — template con todas las variables documentadas
+- La app valida `DATABASE_URL` y `JWT_SECRET` al startup
+
+### Dockerfile
+- **Producción:** `Dockerfile` (non-root user `flos`, healthcheck con curl, multi-stage optimizado)
+- **Desarrollo:** `Dockerfile.dev` (con `--reload` para hot-reload)
+- **.dockerignore:** excluye `.env`, `.xlsx`, `tests/`, docs del build
+
+### Recursos por contenedor
+| Servicio | Límite RAM |
+|----------|-----------|
+| flos-db  | 512M      |
+| flos-app | 512M      |
 
 ## Critical Context
 - Puerto: 8001 (mapeado externamente)
