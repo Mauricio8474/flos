@@ -110,6 +110,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <button onclick="showTab('ordenes')">Órdenes</button>
   <button onclick="showTab('alertas')">Alertas</button>
   <button onclick="showTab('compras')">Compras</button>
+  <button onclick="showTab('lotes')">Lotes</button>
   <button id="nav-auditoria" onclick="showTab('auditoria')">Auditoría</button>
   <button id="nav-usuarios" onclick="showTab('usuarios')">Usuarios</button>
 </nav>
@@ -246,6 +247,29 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
       <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad requerida (kg)</th><th>Origen</th><th>ID Orden</th></tr></thead>
       <tbody id="tbody-compras"></tbody>
     </table>
+  </div>
+</section>
+
+<section id="tab-lotes">
+  <div class="card">
+    <h2>Lotes de producción</h2>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:0.5rem">
+        <label>Buscar lote por código:</label>
+        <input type="text" id="trace-lote-codigo" placeholder="LOTE-001" style="min-width:150px">
+        <button onclick="trazarLote()">Trazar</button>
+      </div>
+    </div>
+    <div id="loading-lotes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <input type="search" class="search-bar" id="search-lotes" placeholder="Buscar lote…" onkeyup="filtrarTabla('lotes')">
+    <table id="tabla-lotes" style="display:none">
+      <thead><tr><th>Código lote</th><th>Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+      <tbody id="tbody-lotes"></tbody>
+    </table>
+  </div>
+  <div id="resultado-trazabilidad" style="display:none" class="card">
+    <h2>Trazabilidad</h2>
+    <div id="trazabilidad-content"></div>
   </div>
 </section>
 
@@ -394,6 +418,7 @@ function showTab(name) {
   else if (name === 'ordenes') cargarOrdenes();
   else if (name === 'alertas') cargarAlertas();
   else if (name === 'compras') cargarSugerenciasCompra();
+  else if (name === 'lotes') cargarLotes();
   else if (name === 'auditoria') cargarAuditoria();
   else if (name === 'usuarios') cargarUsuarios();
   else if (name === 'dashboard') cargarDashboard();
@@ -720,6 +745,59 @@ function cargarSugerenciasCompra() {
   });
 }
 
+// --- LOTES ---
+function cargarLotes(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-lotes'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-lotes').style.display = 'none';
+  api(`/lotes?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay lotes registrados.'; return; }
+    document.getElementById('tabla-lotes').style.display = '';
+    const esAdmin = USUARIO.rol === 'admin';
+    document.getElementById('tbody-lotes').innerHTML = items.map(l =>
+      `<tr>
+        <td><strong>${l.codigo_lote}</strong></td>
+        <td style="font-size:0.75rem;font-family:monospace">${l.id_orden.slice(0,8)}…</td>
+        <td>${l.id_formula}</td>
+        <td>${l.nombre_formula}</td>
+        <td>${l.cantidad_producida} kg</td>
+        <td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td>
+        <td style="font-size:0.8rem">${l.creado_en ? new Date(l.creado_en).toLocaleString() : '-'}</td>
+        <td style="white-space:nowrap">
+          ${l.estado !== 'liberado' ? `<button class="btn-sm success" onclick="cambiarEstadoLote('${l.id}','liberado')">Liberar</button>` : ''}
+          ${l.estado !== 'bloqueado' ? `<button class="btn-sm danger" onclick="cambiarEstadoLote('${l.id}','bloqueado')">Bloquear</button>` : ''}
+        </td>
+      </tr>`
+    ).join('');
+  });
+}
+
+function cambiarEstadoLote(id, estado) {
+  const fd = new FormData(); fd.append('estado', estado);
+  api(`/lotes/${id}/estado`, {method:'PUT', body: fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarLotes(); });
+}
+
+function trazarLote() {
+  const codigo = document.getElementById('trace-lote-codigo').value.trim();
+  if (!codigo) { toast('Ingrese un código de lote', 'error'); return; }
+  api(`/lotes/${codigo}/trazabilidad`).then(data => {
+    if (data.error) { toast(data.error, 'error'); document.getElementById('resultado-trazabilidad').style.display = 'none'; return; }
+    document.getElementById('resultado-trazabilidad').style.display = '';
+    const l = data.lote || {};
+    const o = data.orden || {};
+    const detalles = (o.detalles || []).map(d =>
+      `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td></tr>`
+    ).join('');
+    document.getElementById('trazabilidad-content').innerHTML =
+      `<p><strong>Lote:</strong> ${l.codigo_lote} | <strong>Estado:</strong> <span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span> | <strong>Cantidad:</strong> ${l.cantidad_producida} kg</p>
+       <p><strong>Orden:</strong> ${o.id || l.id_orden} | <strong>Fórmula:</strong> ${o.id_formula} — ${o.nombre_formula}</p>
+       <h3 style="font-size:0.9rem;margin-top:1rem;color:#1a237e">Materiales utilizados</h3>
+       <table><thead><tr><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th></tr></thead><tbody>${detalles || '<tr><td colspan="6">Sin detalles</td></tr>'}</tbody></table>`;
+  });
+}
+
 // --- AUDITORIA ---
 function cargarAuditoria(page, pageSize) {
   page = page || 1; pageSize = pageSize || 50;
@@ -777,14 +855,41 @@ function cargarOrdenes(page, pageSize) {
 }
 
 function verDetalleOrden(id) {
-  api(`/ordenes/${id}`).then(o => {
+  Promise.all([
+    api(`/ordenes/${id}`),
+    api(`/ordenes/${id}/controles`),
+    api(`/ordenes/${id}/lotes`),
+  ]).then(([o, controles, lotes]) => {
     if (o.error) { toast(o.error, 'error'); return; }
     const detalles = (o.detalles || []).map(d =>
       `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${d.nota || ''}</td></tr>`
     ).join('');
-    document.getElementById('modal-detalle-orden-body').innerHTML = detalles;
+    const controlesHtml = Array.isArray(controles) && controles.length
+      ? controles.map(c => `<tr><td>${c.tipo}</td><td><span class="badge ${c.resultado === 'aprobado' ? 'ok' : c.resultado === 'rechazado' ? 'fail' : 'warn'}">${c.resultado}</span></td><td style="font-size:0.8rem">${c.observaciones || '-'}</td><td style="font-size:0.8rem">${c.creado_en ? new Date(c.creado_en).toLocaleString() : '-'}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="color:#999;text-align:center">Sin controles registrados</td></tr>';
+    const lotesHtml = Array.isArray(lotes) && lotes.length
+      ? lotes.map(l => `<tr><td><strong>${l.codigo_lote}</strong></td><td>${l.cantidad_producida} kg</td><td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td></tr>`).join('')
+      : '<tr><td colspan="3" style="color:#999;text-align:center">Sin lotes registrados</td></tr>';
+    document.getElementById('modal-detalle-orden-body').innerHTML = `
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:0">Materiales</h3>
+      <table><thead><tr><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead><tbody>${detalles}</tbody></table>
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:1rem">Control de calidad</h3>
+      <div style="margin-bottom:0.5rem"><input type="text" id="modal-nuevo-control-tipo" placeholder="Tipo (viscosidad, densidad, ph…)" style="padding:0.4rem;border:1px solid #ccc;border-radius:3px;margin-right:0.5rem"><button class="btn-sm" onclick="crearControl('${id}')">Agregar control</button></div>
+      <table><thead><tr><th>Tipo</th><th>Resultado</th><th>Observaciones</th><th>Fecha</th></tr></thead><tbody>${controlesHtml}</tbody></table>
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:1rem">Lotes</h3>
+      <table><thead><tr><th>Código</th><th>Cantidad</th><th>Estado</th></tr></thead><tbody>${lotesHtml}</tbody></table>`;
     document.getElementById('modal-detalle-orden-title').textContent = `Orden ${id.slice(0,8)}… — ${o.nombre_formula}`;
     document.getElementById('modal-detalle-orden').classList.add('open');
+  });
+}
+
+function crearControl(idOrden) {
+  const tipo = document.getElementById('modal-nuevo-control-tipo').value.trim();
+  if (!tipo) { toast('Ingrese un tipo de control', 'error'); return; }
+  const fd = new FormData(); fd.append('tipo', tipo);
+  api(`/ordenes/${idOrden}/controles`, {method:'POST', body: fd}).then(d => {
+    toast(d.mensaje || d.error, d.error ? 'error' : 'success');
+    if (!d.error) verDetalleOrden(idOrden);
   });
 }
 

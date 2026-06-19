@@ -41,6 +41,28 @@ class SugerenciaCompra:
 
 
 @dataclass(frozen=True)
+class ControlCalidad:
+    id: str
+    id_orden: str
+    tipo: str  # ej. "viscosidad", "densidad", "olor", "color", "ph"
+    resultado: str = "pendiente"  # "pendiente" | "aprobado" | "rechazado"
+    observaciones: str = ""
+    creado_en: str = ""
+
+
+@dataclass(frozen=True)
+class LoteProduccion:
+    id: str
+    id_orden: str
+    id_formula: str
+    nombre_formula: str
+    codigo_lote: str
+    cantidad_producida: float
+    estado: str = "activo"  # "activo" | "bloqueado" | "liberado"
+    creado_en: str = ""
+
+
+@dataclass(frozen=True)
 class ResultadoExplosion:
     sku: str
     nombre: str

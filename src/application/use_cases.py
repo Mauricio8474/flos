@@ -2,8 +2,9 @@
 import uuid
 
 from src.domain.models import (
-    AlertaStock, ComponenteFormula, Formula, ItemInventario,
-    ResultadoExplosion, SugerenciaCompra, ESTADOS_ORDEN, validar_transicion_orden,
+    AlertaStock, ComponenteFormula, ControlCalidad, Formula,
+    ItemInventario, LoteProduccion, ResultadoExplosion, SugerenciaCompra,
+    ESTADOS_ORDEN, validar_transicion_orden,
 )
 from src.domain.services import CalculadorMRP, GeneradorAlertasStock, GeneradorSugerenciasCompra
 
@@ -119,6 +120,42 @@ class RepositorioOrdenes(ABC):
 
     @abstractmethod
     def consumir_inventario_orden(self, id_orden: str) -> None:
+        ...
+
+
+class RepositorioControlCalidad(ABC):
+    @abstractmethod
+    def guardar(self, control: ControlCalidad) -> None:
+        ...
+
+    @abstractmethod
+    def listar_por_orden(self, id_orden: str) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def actualizar_resultado(self, id_control: str, resultado: str, observaciones: str) -> bool:
+        ...
+
+
+class RepositorioLotes(ABC):
+    @abstractmethod
+    def guardar(self, lote: LoteProduccion) -> None:
+        ...
+
+    @abstractmethod
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+        ...
+
+    @abstractmethod
+    def obtener(self, id_lote: str) -> dict | None:
+        ...
+
+    @abstractmethod
+    def obtener_por_orden(self, id_orden: str) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def actualizar_estado(self, id_lote: str, estado: str) -> bool:
         ...
 
 
@@ -260,6 +297,72 @@ class CambiarEstadoOrden:
 
         self._repo_ordenes.actualizar_estado(id_orden, nuevo_estado)
         return {"mensaje": f"Orden '{id_orden[:8]}…' ahora está en '{nuevo_estado}'", "estado": nuevo_estado}
+
+
+class CrearControlCalidad:
+    def __init__(self, repo_control: RepositorioControlCalidad) -> None:
+        self._repo_control = repo_control
+
+    def ejecutar(self, id_orden: str, tipo: str) -> dict:
+        import uuid
+        control = ControlCalidad(
+            id=str(uuid.uuid4()),
+            id_orden=id_orden,
+            tipo=tipo,
+        )
+        self._repo_control.guardar(control)
+        return {"mensaje": f"Control de calidad '{tipo}' creado para orden {id_orden[:8]}…", "id": control.id}
+
+
+class RegistrarResultadoControl:
+    def __init__(self, repo_control: RepositorioControlCalidad) -> None:
+        self._repo_control = repo_control
+
+    def ejecutar(self, id_control: str, resultado: str, observaciones: str = "") -> dict:
+        if resultado not in ("aprobado", "rechazado"):
+            return {"error": "Resultado debe ser 'aprobado' o 'rechazado'"}
+        if not self._repo_control.actualizar_resultado(id_control, resultado, observaciones):
+            return {"error": f"Control '{id_control}' no encontrado"}
+        return {"mensaje": f"Control actualizado a '{resultado}'"}
+
+
+class CrearLote:
+    def __init__(self, repo_lotes: RepositorioLotes, repo_ordenes: RepositorioOrdenes) -> None:
+        self._repo_lotes = repo_lotes
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(self, id_orden: str, codigo_lote: str, cantidad_producida: float) -> dict:
+        import uuid
+        orden = self._repo_ordenes.obtener(id_orden)
+        if not orden:
+            return {"error": f"Orden '{id_orden}' no encontrada"}
+        lote = LoteProduccion(
+            id=str(uuid.uuid4()),
+            id_orden=id_orden,
+            id_formula=orden["id_formula"],
+            nombre_formula=orden["nombre_formula"],
+            codigo_lote=codigo_lote,
+            cantidad_producida=cantidad_producida,
+        )
+        self._repo_lotes.guardar(lote)
+        return {"mensaje": f"Lote '{codigo_lote}' creado", "id": lote.id}
+
+
+class TrazarLote:
+    def __init__(self, repo_lotes: RepositorioLotes, repo_ordenes: RepositorioOrdenes) -> None:
+        self._repo_lotes = repo_lotes
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(self, codigo_lote: str) -> dict | None:
+        lotes = self._repo_lotes.listar(1, 1000)[0]
+        lote = next((l for l in lotes if l["codigo_lote"] == codigo_lote), None)
+        if not lote:
+            return None
+        orden = self._repo_ordenes.obtener(lote["id_orden"])
+        return {
+            "lote": lote,
+            "orden": orden,
+        }
 
 
 class GenerarAlertasStock:

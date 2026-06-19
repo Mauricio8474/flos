@@ -25,12 +25,18 @@ from src.infrastructure.auth import (
 
 from src.domain.models import ComponenteFormula, Formula, ItemInventario
 from src.domain.services import CalculadorMRP
-from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden, GenerarAlertasStock, GenerarSugerenciasCompra
+from src.application.use_cases import (
+    CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden,
+    CrearControlCalidad, CrearLote, GenerarAlertasStock,
+    GenerarSugerenciasCompra, RegistrarResultadoControl, TrazarLote,
+)
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
+    PostgresRepositorioControlCalidad,
     PostgresRepositorioFormula,
     PostgresRepositorioInventario,
+    PostgresRepositorioLotes,
     PostgresRepositorioOrdenes,
     PostgresRepositorioUsuario,
     init_db,
@@ -108,6 +114,8 @@ def startup():
     app.state.repo_auditoria = PostgresRepositorioAuditoria(sf)
     app.state.repo_usuarios = PostgresRepositorioUsuario(sf)
     app.state.repo_ordenes = PostgresRepositorioOrdenes(sf)
+    app.state.repo_control_calidad = PostgresRepositorioControlCalidad(sf)
+    app.state.repo_lotes = PostgresRepositorioLotes(sf)
     app.state.caso_calcular_explosion = CalcularExplosion(
         app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
     )
@@ -117,6 +125,10 @@ def startup():
     app.state.caso_cambiar_estado_orden = CambiarEstadoOrden(app.state.repo_ordenes)
     app.state.caso_generar_alertas = GenerarAlertasStock(app.state.repo_inventario)
     app.state.caso_generar_sugerencias = GenerarSugerenciasCompra(app.state.repo_inventario, app.state.repo_ordenes)
+    app.state.caso_crear_control = CrearControlCalidad(app.state.repo_control_calidad)
+    app.state.caso_registrar_resultado = RegistrarResultadoControl(app.state.repo_control_calidad)
+    app.state.caso_crear_lote = CrearLote(app.state.repo_lotes, app.state.repo_ordenes)
+    app.state.caso_trazar_lote = TrazarLote(app.state.repo_lotes, app.state.repo_ordenes)
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -177,6 +189,30 @@ def _caso_generar_alertas():
 
 def _caso_generar_sugerencias():
     return app.state.caso_generar_sugerencias
+
+
+def _repo_control():
+    return app.state.repo_control_calidad
+
+
+def _repo_lotes():
+    return app.state.repo_lotes
+
+
+def _caso_crear_control():
+    return app.state.caso_crear_control
+
+
+def _caso_registrar_resultado():
+    return app.state.caso_registrar_resultado
+
+
+def _caso_crear_lote():
+    return app.state.caso_crear_lote
+
+
+def _caso_trazar_lote():
+    return app.state.caso_trazar_lote
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -607,6 +643,76 @@ def completar_orden(id_orden: str, usuario: dict = Depends(obtener_usuario_actua
         return res
     _auditar("orden", id_orden, "COMPLETAR", "Orden completada - inventario consumido", usuario["sub"])
     return res
+
+
+# ---------------------------------------------------------------------------
+# Control de calidad
+# ---------------------------------------------------------------------------
+@app.get("/ordenes/{id_orden}/controles", dependencies=[Depends(obtener_usuario_actual)])
+def listar_controles_orden(id_orden: str) -> list[dict]:
+    return _repo_control().listar_por_orden(id_orden)
+
+
+@app.post("/ordenes/{id_orden}/controles", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def crear_control_calidad(id_orden: str, tipo: str = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_crear_control().ejecutar(id_orden, tipo)
+    if "error" in res:
+        return res
+    _auditar("control_calidad", res["id"], "CREAR", f"Control '{tipo}' para orden {id_orden[:8]}…", usuario["sub"])
+    return res
+
+
+@app.put("/control-calidad/{id_control}", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def actualizar_resultado_control(id_control: str, resultado: str = Form(...), observaciones: str = Form(""), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_registrar_resultado().ejecutar(id_control, resultado, observaciones)
+    if "error" in res:
+        return res
+    _auditar("control_calidad", id_control, "ACTUALIZAR", f"Resultado: {resultado}", usuario["sub"])
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Lotes / Trazabilidad
+# ---------------------------------------------------------------------------
+@app.get("/lotes", dependencies=[Depends(obtener_usuario_actual)])
+def listar_lotes(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_lotes().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
+
+
+@app.get("/lotes/{codigo_lote}/trazabilidad", dependencies=[Depends(obtener_usuario_actual)])
+def trazar_lote(codigo_lote: str) -> dict:
+    res = _caso_trazar_lote().ejecutar(codigo_lote)
+    if not res:
+        return {"error": f"Lote '{codigo_lote}' no encontrado"}
+    return res
+
+
+@app.post("/ordenes/{id_orden}/lotes", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def crear_lote(id_orden: str, codigo_lote: str = Form(...), cantidad_producida: float = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_crear_lote().ejecutar(id_orden, codigo_lote, cantidad_producida)
+    if "error" in res:
+        return res
+    _auditar("lote", res["id"], "CREAR", f"Lote '{codigo_lote}' para orden {id_orden[:8]}…", usuario["sub"])
+    return res
+
+
+@app.get("/ordenes/{id_orden}/lotes", dependencies=[Depends(obtener_usuario_actual)])
+def listar_lotes_orden(id_orden: str) -> list[dict]:
+    return _repo_lotes().obtener_por_orden(id_orden)
+
+
+@app.put("/lotes/{id_lote}/estado", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def actualizar_estado_lote(id_lote: str, estado: str = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    if estado not in ("activo", "bloqueado", "liberado"):
+        return {"error": "Estado debe ser 'activo', 'bloqueado' o 'liberado'"}
+    if not _repo_lotes().actualizar_estado(id_lote, estado):
+        return {"error": f"Lote '{id_lote}' no encontrado"}
+    _auditar("lote", id_lote, "ACTUALIZAR", f"Estado: {estado}", usuario["sub"])
+    return {"mensaje": f"Lote actualizado a '{estado}'"}
 
 
 # ---------------------------------------------------------------------------

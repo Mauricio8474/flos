@@ -3,9 +3,12 @@
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioOrdenes, RepositorioUsuario
+from src.application.use_cases import (
+    RepositorioAuditoria, RepositorioControlCalidad, RepositorioFormula,
+    RepositorioInventario, RepositorioLotes, RepositorioOrdenes, RepositorioUsuario,
+)
 from src.domain.models import ItemInventario
-from src.domain.models import ComponenteFormula, Formula
+from src.domain.models import ComponenteFormula, ControlCalidad, Formula, LoteProduccion
 
 Base = declarative_base()
 
@@ -45,6 +48,30 @@ class OrdenProduccionORM(Base):
     cantidad_kg = Column(Float, nullable=False)
     estado = Column(String, nullable=False, default="pendiente")
     usuario = Column(String, default="")
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ControlCalidadORM(Base):
+    __tablename__ = "control_calidad"
+
+    id = Column(String, primary_key=True)
+    id_orden = Column(String, nullable=False, index=True)
+    tipo = Column(String, nullable=False)
+    resultado = Column(String, nullable=False, default="pendiente")
+    observaciones = Column(String, default="")
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class LoteProduccionORM(Base):
+    __tablename__ = "lotes_produccion"
+
+    id = Column(String, primary_key=True)
+    id_orden = Column(String, nullable=False, index=True)
+    id_formula = Column(String, nullable=False)
+    nombre_formula = Column(String, nullable=False)
+    codigo_lote = Column(String, unique=True, nullable=False)
+    cantidad_producida = Column(Float, nullable=False)
+    estado = Column(String, nullable=False, default="activo")
     creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -512,6 +539,99 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
             }
 
 
+class PostgresRepositorioControlCalidad(RepositorioControlCalidad):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def guardar(self, control: ControlCalidad) -> None:
+        with self._sf() as session:
+            session.add(ControlCalidadORM(
+                id=control.id, id_orden=control.id_orden, tipo=control.tipo,
+                resultado=control.resultado, observaciones=control.observaciones,
+            ))
+            session.commit()
+
+    def listar_por_orden(self, id_orden: str) -> list[dict]:
+        with self._sf() as session:
+            rows = session.query(ControlCalidadORM).filter_by(id_orden=id_orden).order_by(ControlCalidadORM.creado_en.desc()).all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "tipo": r.tipo, "resultado": r.resultado,
+                 "observaciones": r.observaciones, "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ]
+
+    def actualizar_resultado(self, id_control: str, resultado: str, observaciones: str) -> bool:
+        with self._sf() as session:
+            r = session.query(ControlCalidadORM).filter_by(id=id_control).first()
+            if not r:
+                return False
+            r.resultado = resultado
+            if observaciones:
+                r.observaciones = observaciones
+            session.commit()
+            return True
+
+
+class PostgresRepositorioLotes(RepositorioLotes):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def guardar(self, lote: LoteProduccion) -> None:
+        with self._sf() as session:
+            session.add(LoteProduccionORM(
+                id=lote.id, id_orden=lote.id_orden, id_formula=lote.id_formula,
+                nombre_formula=lote.nombre_formula, codigo_lote=lote.codigo_lote,
+                cantidad_producida=lote.cantidad_producida, estado=lote.estado,
+            ))
+            session.commit()
+
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+        with self._sf() as session:
+            query = session.query(LoteProduccionORM).order_by(LoteProduccionORM.creado_en.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                 "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                 "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                 "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ], total
+
+    def obtener(self, id_lote: str) -> dict | None:
+        with self._sf() as session:
+            r = session.query(LoteProduccionORM).filter_by(id=id_lote).first()
+            if not r:
+                return None
+            return {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                    "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                    "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                    "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+
+    def obtener_por_orden(self, id_orden: str) -> list[dict]:
+        with self._sf() as session:
+            rows = session.query(LoteProduccionORM).filter_by(id_orden=id_orden).order_by(LoteProduccionORM.creado_en.desc()).all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                 "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                 "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                 "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ]
+
+    def actualizar_estado(self, id_lote: str, estado: str) -> bool:
+        with self._sf() as session:
+            r = session.query(LoteProduccionORM).filter_by(id=id_lote).first()
+            if not r:
+                return False
+            r.estado = estado
+            session.commit()
+            return True
+
+
 def init_db(database_url: str) -> sessionmaker:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
@@ -536,6 +656,41 @@ def init_db(database_url: str) -> sessionmaker:
             ord_cols = {c["name"] for c in inspector.get_columns("ordenes_produccion")}
             if "estado" not in ord_cols:
                 conn.execute(text("ALTER TABLE ordenes_produccion ADD COLUMN estado VARCHAR NOT NULL DEFAULT 'pendiente'"))
+
+        # Create control_calidad table if not exists
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS control_calidad (
+                id VARCHAR PRIMARY KEY,
+                id_orden VARCHAR NOT NULL,
+                tipo VARCHAR NOT NULL,
+                resultado VARCHAR NOT NULL DEFAULT 'pendiente',
+                observaciones VARCHAR DEFAULT '',
+                creado_en TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Create lotes_produccion table if not exists
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lotes_produccion (
+                id VARCHAR PRIMARY KEY,
+                id_orden VARCHAR NOT NULL,
+                id_formula VARCHAR NOT NULL,
+                nombre_formula VARCHAR NOT NULL,
+                codigo_lote VARCHAR UNIQUE NOT NULL,
+                cantidad_producida FLOAT NOT NULL,
+                estado VARCHAR NOT NULL DEFAULT 'activo',
+                creado_en TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Add indexes if missing
+        existing_tables = [t for t in inspector.get_table_names()]
+        if "control_calidad" in existing_tables:
+            cc_ix = {ix["name"] for ix in inspector.get_indexes("control_calidad")}
+            if "ix_control_calidad_id_orden" not in cc_ix:
+                conn.execute(text("CREATE INDEX ix_control_calidad_id_orden ON control_calidad (id_orden)"))
+        if "lotes_produccion" in existing_tables:
+            lp_ix = {ix["name"] for ix in inspector.get_indexes("lotes_produccion")}
+            if "ix_lotes_produccion_id_orden" not in lp_ix:
+                conn.execute(text("CREATE INDEX ix_lotes_produccion_id_orden ON lotes_produccion (id_orden)"))
 
         conn.commit()
 
