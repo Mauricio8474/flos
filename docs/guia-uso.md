@@ -50,7 +50,7 @@ El usuario `admin` se crea automáticamente al iniciar la app si no existe.
 ### Roles y permisos
 
 | Sección | admin | ingenieria | almacen | produccion | consultor |
-|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|
 | Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Fórmulas (ver) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Fórmulas (crear/editar/eliminar) | ✅ | ✅ | ❌ | ❌ | ❌ |
@@ -59,6 +59,8 @@ El usuario `admin` se crea automáticamente al iniciar la app si no existe.
 | Inventario (cargar Excel) | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Explosión (calcular) | ✅ | ✅ | ❌ | ✅ | ❌ |
 | Descargar Excel/PDF | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Órdenes (ver) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Órdenes (eliminar) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Auditoría | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Usuarios (CRUD) | ✅ | ❌ | ❌ | ❌ | ❌ |
 
@@ -164,8 +166,13 @@ curl -X POST http://localhost:8000/produccion/cargar-inventario \
 |---|---|---|
 | `POST` | `/produccion/calcular-explosion` | admin, ingenieria, produccion |
 | `POST` | `/produccion/calcular-explosion/batch` | admin, ingenieria, produccion |
+| `POST` | `/produccion/calcular-explosion/batch/excel` | admin, ingenieria, produccion |
 | `POST` | `/produccion/calcular-explosion/excel` | admin, ingenieria, almacen, produccion |
 | `POST` | `/produccion/calcular-explosion/pdf` | admin, ingenieria, almacen, produccion |
+
+> Las explosiones se guardan automáticamente como **órdenes de producción** con fecha, usuario y todos los detalles de materiales. Cada resultado incluye un `orden_id` para rastrear la orden generada.
+
+Los resultados incluyen los campos: `sku`, `nombre` (descripción del material), `requerido_kg`, `disponible_kg`, `faltante_kg`, `cubierto`, `nota` (aclaratoria si el material no está en inventario) y `orden_id`.
 
 ```bash
 # Explosión simple
@@ -173,11 +180,16 @@ curl -X POST http://localhost:8000/produccion/calcular-explosion \
   -H "Authorization: Bearer <token>" \
   -d "id_formula=AMC2705&cantidad_a_producir_kg=100"
 
-# Explosión batch
+# Explosión batch (JSON)
 curl -X POST http://localhost:8000/produccion/calcular-explosion/batch \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '[{"id_formula": "AMC2705", "cantidad": 100}, {"id_formula": "AM2494", "cantidad": 50}]'
+
+# Explosión batch (Excel) — columnas: REFERENCIA PRODUCTO TERMINADO (idx 0), CANTIDAD (idx 1)
+curl -X POST http://localhost:8000/produccion/calcular-explosion/batch/excel \
+  -H "Authorization: Bearer <token>" \
+  -F "archivo=@ejemplo_batch.xlsx"
 
 # Descargar Excel
 curl -X POST http://localhost:8000/produccion/calcular-explosion/excel \
@@ -191,6 +203,61 @@ curl -X POST http://localhost:8000/produccion/calcular-explosion/pdf \
   -d "id_formula=AMC2705&cantidad_a_producir_kg=100" \
   -o explosion.pdf
 ```
+
+### Órdenes de producción
+
+Cada explosión de materiales se guarda automáticamente como una orden de producción con todos sus detalles.
+
+| Método | Endpoint | Permiso |
+|---|---|---|
+| `GET` | `/ordenes` | Todos autenticados |
+| `GET` | `/ordenes/{id}` | Todos autenticados |
+| `DELETE` | `/ordenes/{id}` | admin |
+
+```bash
+# Listar órdenes
+curl http://localhost:8000/ordenes \
+  -H "Authorization: Bearer <token>"
+
+# Ver detalle de una orden (incluye todos los componentes)
+curl http://localhost:8000/ordenes/<orden_id> \
+  -H "Authorization: Bearer <token>"
+```
+
+Respuesta de `GET /ordenes/{id}`:
+```json
+{
+  "id": "uuid-de-la-orden",
+  "id_formula": "AMC2705",
+  "nombre_formula": "SABOR MANZANA",
+  "cantidad_kg": 100.0,
+  "usuario": "admin",
+  "creado_en": "2026-06-18T21:00:00+00:00",
+  "detalles": [
+    {
+      "sku": "MP003",
+      "nombre": "ALCOHOL",
+      "requerido_kg": 16.25,
+      "disponible_kg": 908.17,
+      "faltante_kg": 0.0,
+      "cubierto": true,
+      "nota": ""
+    }
+  ]
+}
+```
+
+### Dashboard — Estadísticas
+
+| Método | Endpoint | Permiso |
+|---|---|---|
+| `GET` | `/dashboard/estadisticas` | Todos autenticados |
+
+Devuelve:
+- `total_ordenes` — número total de órdenes registradas
+- `ordenes_por_dia` — órdenes agrupadas por día (últimos 7 días)
+- `productos_mas_demandados` — top 10 fórmulas más producidas (veces y total kg)
+- `materiales_mas_requeridos` — top 10 SKUs más requeridos (total kg)
 
 ### Auditoría (solo admin)
 

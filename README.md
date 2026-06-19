@@ -34,6 +34,17 @@ uvicorn src.main:app --reload
 
 La API estará disponible en `http://localhost:8000/docs`
 
+## Funcionalidades
+
+- **Fórmulas** — CRUD completo, carga masiva desde Excel (configurable por columnas)
+- **Inventario** — Carga desde Excel (formato simple o SIIGO), consulta en línea
+- **Explosión de materiales** — Cálculo MRP con detección de faltantes; soporta batch JSON y Excel
+- **Órdenes de producción** — Cada explosión se guarda automáticamente como orden histórica
+- **Dashboard** — Estadísticas: órdenes por día, productos más demandados, materiales más requeridos
+- **Autenticación JWT** — 5 roles (admin, ingenieria, almacen, produccion, consultor)
+- **Auditoría** — Trazabilidad de cambios en fórmulas e inventario
+- **Reportes** — Descarga de resultados en Excel y PDF
+
 ## Estructura del proyecto
 
 ```
