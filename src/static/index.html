@@ -64,6 +64,11 @@ input[type="file"] { padding: 0.4rem; }
 .hidden { display: none !important; }
 .search-bar { width: 100%; max-width: 350px; padding: 0.45rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; margin-bottom: 0.75rem; }
 .search-bar:focus { outline: none; border-color: #1a237e; }
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: 3px; border: none; cursor: pointer; background: #1a237e; color: #fff; }
+.btn-sm:hover { background: #283593; }
+.btn-sm.danger { background: #c62828; }
+.btn-sm.danger:hover { background: #e53935; }
+.badge.warn { background: #fff3e0; color: #e65100; }
 textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; width: 100%; }
 </style>
 </head>
@@ -212,7 +217,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <div id="loading-ordenes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <input type="search" class="search-bar" id="search-ordenes" placeholder="Buscar orden…" onkeyup="filtrarTabla('ordenes')">
     <table id="tabla-ordenes" style="display:none">
-      <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Usuario</th><th>Fecha</th><th>Componentes</th><th id="th-acciones-orden">Acciones</th></tr></thead>
+      <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Estado</th><th>Usuario</th><th>Fecha</th><th>Detalle</th><th id="th-acciones-orden">Acciones</th></tr></thead>
       <tbody id="tbody-ordenes"></tbody>
     </table>
   </div>
@@ -369,12 +374,12 @@ function showTab(name) {
 // --- DASHBOARD ---
 function cargarDashboard() {
   Promise.all([
-    api('/produccion/formulas'),
-    api('/produccion/inventario'),
+    api('/produccion/formulas?page=1&page_size=1'),
+    api('/produccion/inventario?page=1&page_size=1'),
     api('/dashboard/estadisticas'),
   ]).then(([formulas, inv, est]) => {
-    const nf = Array.isArray(formulas) ? formulas.length : 0;
-    const ni = Array.isArray(inv) ? inv.length : 0;
+    const nf = formulas.total || (Array.isArray(formulas) ? formulas.length : 0);
+    const ni = inv.total || (Array.isArray(inv) ? inv.length : 0);
     const totalOrdenes = est.total_ordenes || 0;
     document.getElementById('dashboard-resumen').innerHTML =
       `<div class="card" style="flex:1;min-width:200px"><h3>${nf}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>` +
@@ -423,16 +428,18 @@ function filtrarTabla(tabla) {
 }
 
 // --- FORMULAS ---
-function cargarFormulas() {
-  const el = document.getElementById('loading-formulas'); el.style.display = 'block';
+function cargarFormulas(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 100;
+  const el = document.getElementById('loading-formulas'); if (el) el.style.display = 'block';
   document.getElementById('tabla-formulas').style.display = 'none';
-  api('/produccion/formulas').then(data => {
-    el.style.display = 'none';
-    if (data.error) { el.textContent = 'Error al cargar fórmulas'; return; }
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay fórmulas registradas.'; return; }
+  api(`/produccion/formulas?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    if (data.error) { if (el) el.textContent = 'Error al cargar fórmulas'; return; }
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay fórmulas registradas.'; return; }
     document.getElementById('tabla-formulas').style.display = '';
     const puedeEditar = ['admin','ingenieria'].includes(USUARIO.rol);
-    document.getElementById('tbody-formulas').innerHTML = data.map(f =>
+    document.getElementById('tbody-formulas').innerHTML = items.map(f =>
       `<tr><td><strong>${f.id}</strong></td><td>${f.nombre}</td><td>${f.componentes.length} componentes</td>` +
       (puedeEditar ? `<td style="display:flex;gap:0.3rem"><button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button><button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button></td>` : '<td>-</td>') +
       `</tr>`
@@ -441,9 +448,10 @@ function cargarFormulas() {
 }
 
 function cargarSelectorFormulas() {
-  api('/produccion/formulas').then(data => {
+  api('/produccion/formulas?page=1&page_size=1000').then(data => {
+    const items = data.items || data;
     const sel = document.getElementById('explosion-formula');
-    if (Array.isArray(data)) sel.innerHTML = data.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
+    if (items.length) sel.innerHTML = items.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
   });
 }
 
@@ -531,16 +539,18 @@ function descargarFormulas() {
 }
 
 // --- INVENTARIO ---
-function cargarInventario() {
-  const el = document.getElementById('loading-inventario'); el.style.display = 'block';
+function cargarInventario(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 100;
+  const el = document.getElementById('loading-inventario'); if (el) el.style.display = 'block';
   document.getElementById('tabla-inventario').style.display = 'none';
-  api('/produccion/inventario').then(data => {
-    el.style.display = 'none';
-    if (data.error) { el.textContent = 'Error al cargar inventario'; return; }
-    if (!data || !data.length) { el.textContent = 'Inventario vacío.'; return; }
+  api(`/produccion/inventario?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    if (data.error) { if (el) el.textContent = 'Error al cargar inventario'; return; }
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'Inventario vacío.'; return; }
     document.getElementById('tabla-inventario').style.display = '';
-    data.sort((a,b) => a.sku.localeCompare(b.sku));
-    document.getElementById('tbody-inventario').innerHTML = data.map(i =>
+    items.sort((a,b) => a.sku.localeCompare(b.sku));
+    document.getElementById('tbody-inventario').innerHTML = items.map(i =>
       `<tr><td>${i.sku}</td><td>${i.nombre || ''}</td><td>${i.cantidad_kg} kg</td><td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td></tr>`
     ).join('');
   });
@@ -635,14 +645,16 @@ function mostrarResultadosBatch(data) {
 }
 
 // --- AUDITORIA ---
-function cargarAuditoria() {
-  const el = document.getElementById('loading-auditoria'); el.style.display = 'block';
+function cargarAuditoria(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-auditoria'); if (el) el.style.display = 'block';
   document.getElementById('tabla-auditoria').style.display = 'none';
-  api('/produccion/auditoria').then(data => {
-    el.style.display = 'none';
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay registros.'; return; }
+  api(`/produccion/auditoria?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay registros.'; return; }
     document.getElementById('tabla-auditoria').style.display = '';
-    document.getElementById('tbody-auditoria').innerHTML = data.map(r =>
+    document.getElementById('tbody-auditoria').innerHTML = items.map(r =>
       `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td></tr>`
     ).join('');
   });
@@ -650,27 +662,41 @@ function cargarAuditoria() {
 
 // --- USUARIOS ---
 // --- ORDENES ---
-function cargarOrdenes() {
-  const el = document.getElementById('loading-ordenes'); el.style.display = 'block';
+function cargarOrdenes(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-ordenes'); if (el) el.style.display = 'block';
   document.getElementById('tabla-ordenes').style.display = 'none';
-  api('/ordenes').then(data => {
-    el.style.display = 'none';
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay órdenes registradas.'; return; }
+  api(`/ordenes?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay órdenes registradas.'; return; }
     document.getElementById('tabla-ordenes').style.display = '';
     const esAdmin = USUARIO.rol === 'admin';
     document.getElementById('th-acciones-orden').classList.toggle('hidden', !esAdmin);
-    document.getElementById('tbody-ordenes').innerHTML = data.map(o =>
-      `<tr>
+    function badgeEstado(est) {
+      const cls = est === 'pendiente' ? 'badge warn' : est === 'en_produccion' ? 'badge' : 'badge ok';
+      return `<span class="${cls}" style="font-size:0.75rem">${est === 'en_produccion' ? 'En producción' : est.charAt(0).toUpperCase()+est.slice(1)}</span>`;
+    }
+    const esProduccion = ['admin','produccion'].includes(USUARIO.rol);
+    document.getElementById('tbody-ordenes').innerHTML = items.map(o => {
+      const puedeIniciar = esProduccion && o.estado === 'pendiente';
+      const puedeCompletar = esProduccion && o.estado === 'en_produccion';
+      const puedeEliminar = esAdmin && o.estado === 'pendiente';
+      let acciones = puedeIniciar ? `<button class="btn-sm" onclick="iniciarOrden('${o.id}')" style="font-size:0.75rem">Iniciar</button>` : '';
+      if (puedeCompletar) acciones += `<button class="btn-sm" onclick="completarOrden('${o.id}')" style="font-size:0.75rem">Completar</button>`;
+      if (puedeEliminar) acciones += `<button class="danger btn-sm" onclick="eliminarOrden('${o.id}')" style="font-size:0.75rem">Eliminar</button>`;
+      return `<tr>
         <td style="font-size:0.75rem;font-family:monospace">${o.id.slice(0,8)}…</td>
         <td>${o.id_formula}</td>
         <td>${o.nombre_formula}</td>
         <td>${o.cantidad_kg} kg</td>
+        <td>${badgeEstado(o.estado)}</td>
         <td style="font-size:0.8rem">${o.usuario || '-'}</td>
         <td style="font-size:0.8rem">${o.creado_en ? new Date(o.creado_en).toLocaleString() : '-'}</td>
         <td style="font-size:0.8rem"><a href="#" onclick="verDetalleOrden('${o.id}')">${o.cantidad_componentes || 'Ver'}</a></td>
-        <td>${esAdmin ? `<button class="danger" onclick="eliminarOrden('${o.id}')" style="font-size:0.8rem">Eliminar</button>` : '-'}</td>
-      </tr>`
-    ).join('');
+        <td style="white-space:nowrap">${acciones || '-'}</td>
+      </tr>`;
+    }).join('');
   });
 }
 
@@ -684,6 +710,16 @@ function verDetalleOrden(id) {
     document.getElementById('modal-detalle-orden-title').textContent = `Orden ${id.slice(0,8)}… — ${o.nombre_formula}`;
     document.getElementById('modal-detalle-orden').classList.add('open');
   });
+}
+
+function iniciarOrden(id) {
+  if (!confirm(`Iniciar producción de orden ${id.slice(0,8)}…?`)) return;
+  api(`/ordenes/${id}/iniciar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+}
+
+function completarOrden(id) {
+  if (!confirm(`Completar orden ${id.slice(0,8)}…? Esto consumirá materiales del inventario.`)) return;
+  api(`/ordenes/${id}/completar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
 }
 
 function eliminarOrden(id) {

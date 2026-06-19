@@ -25,7 +25,7 @@ from src.infrastructure.auth import (
 
 from src.domain.models import ComponenteFormula, Formula, ItemInventario
 from src.domain.services import CalculadorMRP
-from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch
+from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
@@ -114,6 +114,7 @@ def startup():
     app.state.caso_calcular_explosion_batch = CalcularExplosionBatch(
         app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
     )
+    app.state.caso_cambiar_estado_orden = CambiarEstadoOrden(app.state.repo_ordenes)
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -144,12 +145,28 @@ def _repo_ordenes():
     return app.state.repo_ordenes
 
 
+def _paginar(items: list | dict, total: int, page: int, page_size: int) -> dict:
+    if page_size <= 0:
+        page_size = total if total > 0 else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+    }
+
+
 def _caso_calcular_explosion():
     return app.state.caso_calcular_explosion
 
 
 def _caso_calcular_explosion_batch():
     return app.state.caso_calcular_explosion_batch
+
+
+def _caso_cambiar_estado_orden():
+    return app.state.caso_cambiar_estado_orden
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -217,14 +234,18 @@ def eliminar_usuario(username: str) -> dict:
 # Fórmulas
 # ---------------------------------------------------------------------------
 @app.get("/produccion/formulas", dependencies=[Depends(obtener_usuario_actual)])
-def listar_formulas() -> list[dict]:
-    todas = _repo_formula().listar()
-    return [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
+def listar_formulas(page: int = 0, page_size: int = 0) -> dict:
+    todas, total = _repo_formula().listar(page, page_size)
+    items = [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 @app.get("/produccion/formulas/excel", dependencies=[Depends(obtener_usuario_actual)])
 def descargar_formulas_excel() -> StreamingResponse:
-    todas = _repo_formula().listar()
+    todas, _ = _repo_formula().listar()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "formulas"
@@ -344,9 +365,9 @@ def cargar_inventario(
 
 
 @app.get("/produccion/inventario", dependencies=[Depends(obtener_usuario_actual)])
-def obtener_inventario() -> list[dict]:
-    items = _repo_inventario().obtener_todos()
-    return [
+def obtener_inventario(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_inventario().obtener_todos(page, page_size)
+    data = [
         {
             "sku": i.sku,
             "nombre": i.nombre,
@@ -355,14 +376,22 @@ def obtener_inventario() -> list[dict]:
         }
         for i in items
     ]
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(data, total, page, page_size)
 
 
 # ---------------------------------------------------------------------------
 # Auditoría
 # ---------------------------------------------------------------------------
 @app.get("/produccion/auditoria", dependencies=[Depends(requerir_rol("admin"))])
-def listar_auditoria(limite: int = 100) -> list[dict]:
-    return _repo_auditoria().listar(limite)
+def listar_auditoria(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_auditoria().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 def _inventario_a_dict(items: list) -> dict[str, ItemInventario]:
@@ -482,7 +511,7 @@ def calcular_explosion_excel(id_formula: str = Form(...), cantidad_a_producir_kg
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()[0]))
     return _generar_excel_resultados(resultados, id_formula)
 
 
@@ -491,7 +520,7 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()[0]))
     return _generar_pdf_resultados(resultados, id_formula, cantidad_a_producir_kg)
 
 
@@ -499,8 +528,12 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
 # Órdenes de producción
 # ---------------------------------------------------------------------------
 @app.get("/ordenes", dependencies=[Depends(obtener_usuario_actual)])
-def listar_ordenes(limite: int = 100) -> list[dict]:
-    return _repo_ordenes().listar(limite)
+def listar_ordenes(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_ordenes().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 @app.get("/ordenes/{id_orden}", dependencies=[Depends(obtener_usuario_actual)])
@@ -513,9 +546,32 @@ def obtener_orden(id_orden: str) -> dict:
 
 @app.delete("/ordenes/{id_orden}", dependencies=[Depends(requerir_rol("admin"))])
 def eliminar_orden(id_orden: str) -> dict:
+    orden = _repo_ordenes().obtener(id_orden)
+    if not orden:
+        return {"error": f"Orden '{id_orden}' no encontrada"}
+    if orden.get("estado") != "pendiente":
+        return {"error": "Solo se pueden eliminar órdenes en estado 'pendiente'"}
     if _repo_ordenes().eliminar(id_orden):
         return {"mensaje": f"Orden '{id_orden}' eliminada"}
     return {"error": f"Orden '{id_orden}' no encontrada"}
+
+
+@app.post("/ordenes/{id_orden}/iniciar", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def iniciar_orden(id_orden: str, usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_cambiar_estado_orden().ejecutar(id_orden, "en_produccion")
+    if "error" in res:
+        return res
+    _auditar("orden", id_orden, "INICIAR", "Orden pasa a en_produccion", usuario["sub"])
+    return res
+
+
+@app.post("/ordenes/{id_orden}/completar", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def completar_orden(id_orden: str, usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_cambiar_estado_orden().ejecutar(id_orden, "completada")
+    if "error" in res:
+        return res
+    _auditar("orden", id_orden, "COMPLETAR", "Orden completada - inventario consumido", usuario["sub"])
+    return res
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ class OrdenProduccionORM(Base):
     id_formula = Column(String, nullable=False)
     nombre_formula = Column(String, nullable=False)
     cantidad_kg = Column(Float, nullable=False)
+    estado = Column(String, nullable=False, default="pendiente")
     usuario = Column(String, default="")
     creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -99,13 +100,22 @@ class PostgresRepositorioFormula(RepositorioFormula):
                 ),
             )
 
-    def listar(self) -> dict[str, Formula]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[dict[str, Formula], int]:
         with self._sf() as session:
-            formulas_orm = {f.id_formula: f for f in session.query(FormulaORM).all()}
+            query = session.query(FormulaORM)
+            total = query.count()
+
+            if page > 0 and page_size > 0:
+                formulas_orm = {f.id_formula: f for f in query.order_by(FormulaORM.id_formula).offset((page - 1) * page_size).limit(page_size).all()}
+            else:
+                formulas_orm = {f.id_formula: f for f in query.all()}
+
             if not formulas_orm:
-                return {}
+                return {}, total
+            ids = list(formulas_orm.keys())
             componentes = (
                 session.query(ComponenteORM)
+                .filter(ComponenteORM.id_formula.in_(ids))
                 .order_by(ComponenteORM.id_formula, ComponenteORM.id)
                 .all()
             )
@@ -117,7 +127,7 @@ class PostgresRepositorioFormula(RepositorioFormula):
                     if c.id_formula == id_formula
                 )
                 resultado[id_formula] = Formula(nombre=f.nombre, componentes=comps)
-            return resultado
+            return resultado, total
 
     def eliminar(self, id_formula: str) -> bool:
         with self._sf() as session:
@@ -201,14 +211,14 @@ class PostgresRepositorioAuditoria(RepositorioAuditoria):
             )
             session.commit()
 
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         with self._sf() as session:
-            rows = (
-                session.query(AuditoriaORM)
-                .order_by(AuditoriaORM.id.desc())
-                .limit(limite)
-                .all()
-            )
+            query = session.query(AuditoriaORM).order_by(AuditoriaORM.id.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             return [
                 {
                     "id": r.id,
@@ -220,7 +230,7 @@ class PostgresRepositorioAuditoria(RepositorioAuditoria):
                     "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                 }
                 for r in rows
-            ]
+            ], total
 
 
 class PostgresRepositorioInventario(RepositorioInventario):
@@ -240,13 +250,18 @@ class PostgresRepositorioInventario(RepositorioInventario):
                 )
             session.commit()
 
-    def obtener_todos(self) -> list[ItemInventario]:
+    def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
         with self._sf() as session:
-            rows = session.query(InventarioORM).order_by(InventarioORM.sku).all()
+            query = session.query(InventarioORM).order_by(InventarioORM.sku)
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             return [
                 ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario)
                 for r in rows
-            ]
+            ], total
 
 
 class PostgresRepositorioOrdenes(RepositorioOrdenes):
@@ -269,6 +284,7 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                     id_formula=id_formula,
                     nombre_formula=nombre_formula,
                     cantidad_kg=cantidad_kg,
+                    estado="pendiente",
                     usuario=usuario,
                 )
             )
@@ -287,14 +303,14 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                 )
             session.commit()
 
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         with self._sf() as session:
-            rows = (
-                session.query(OrdenProduccionORM)
-                .order_by(OrdenProduccionORM.creado_en.desc())
-                .limit(limite)
-                .all()
-            )
+            query = session.query(OrdenProduccionORM).order_by(OrdenProduccionORM.creado_en.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             ids = [r.id for r in rows]
             if ids:
                 from sqlalchemy import text
@@ -313,13 +329,14 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                     "id_formula": r.id_formula,
                     "nombre_formula": r.nombre_formula,
                     "cantidad_kg": r.cantidad_kg,
+                    "estado": r.estado,
                     "usuario": r.usuario,
                     "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                     "cantidad_componentes": counts.get(r.id, 0),
                     "detalles": [],
                 }
                 for r in rows
-            ]
+            ], total
 
     def obtener(self, id_orden: str) -> dict | None:
         with self._sf() as session:
@@ -337,6 +354,7 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                 "id_formula": r.id_formula,
                 "nombre_formula": r.nombre_formula,
                 "cantidad_kg": r.cantidad_kg,
+                "estado": r.estado,
                 "usuario": r.usuario,
                 "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                 "detalles": [
@@ -352,6 +370,25 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                     for d in detalles
                 ],
             }
+
+    def actualizar_estado(self, id_orden: str, nuevo_estado: str) -> bool:
+        with self._sf() as session:
+            r = session.query(OrdenProduccionORM).filter_by(id=id_orden).first()
+            if not r:
+                return False
+            r.estado = nuevo_estado
+            session.commit()
+            return True
+
+    def consumir_inventario_orden(self, id_orden: str) -> None:
+        with self._sf() as session:
+            detalles = session.query(DetalleOrdenORM).filter_by(id_orden=id_orden).all()
+            for d in detalles:
+                inv = session.query(InventarioORM).filter_by(sku=d.sku).first()
+                if inv:
+                    nuevo = max(0.0, inv.cantidad_kg - d.requerido_kg)
+                    inv.cantidad_kg = nuevo
+            session.commit()
 
     def eliminar(self, id_orden: str) -> bool:
         with self._sf() as session:
@@ -436,6 +473,11 @@ def init_db(database_url: str) -> sessionmaker:
         indexes = {ix["name"] for ix in inspector.get_indexes("componentes_formula")}
         if "ix_componentes_formula_id_formula" not in indexes:
             conn.execute(text("CREATE INDEX ix_componentes_formula_id_formula ON componentes_formula (id_formula)"))
+
+        if "ordenes_produccion" in [t for t in inspector.get_table_names()]:
+            ord_cols = {c["name"] for c in inspector.get_columns("ordenes_produccion")}
+            if "estado" not in ord_cols:
+                conn.execute(text("ALTER TABLE ordenes_produccion ADD COLUMN estado VARCHAR NOT NULL DEFAULT 'pendiente'"))
 
         conn.commit()
 

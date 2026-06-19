@@ -1,7 +1,7 @@
 ﻿from abc import ABC, abstractmethod
 import uuid
 
-from src.domain.models import ComponenteFormula, Formula, ItemInventario, ResultadoExplosion
+from src.domain.models import ComponenteFormula, Formula, ItemInventario, ResultadoExplosion, ESTADOS_ORDEN, validar_transicion_orden
 from src.domain.services import CalculadorMRP
 
 
@@ -31,7 +31,7 @@ class RepositorioFormula(ABC):
         ...
 
     @abstractmethod
-    def listar(self) -> dict[str, Formula]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[dict[str, Formula], int]:
         ...
 
     @abstractmethod
@@ -45,7 +45,7 @@ class RepositorioInventario(ABC):
         ...
 
     @abstractmethod
-    def obtener_todos(self) -> list[ItemInventario]:
+    def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
         ...
 
 
@@ -73,7 +73,7 @@ class RepositorioAuditoria(ABC):
         ...
 
     @abstractmethod
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         ...
 
 
@@ -83,7 +83,7 @@ class RepositorioOrdenes(ABC):
         ...
 
     @abstractmethod
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         ...
 
     @abstractmethod
@@ -96,6 +96,14 @@ class RepositorioOrdenes(ABC):
 
     @abstractmethod
     def estadisticas(self) -> dict:
+        ...
+
+    @abstractmethod
+    def actualizar_estado(self, id_orden: str, nuevo_estado: str) -> bool:
+        ...
+
+    @abstractmethod
+    def consumir_inventario_orden(self, id_orden: str) -> None:
         ...
 
 
@@ -135,7 +143,7 @@ class CalcularExplosion:
         if not formula:
             return [], f"Formula '{id_formula}' no encontrada"
 
-        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()}
+        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()[0]}
         resultados = CalculadorMRP.calcular_explosion(formula, cantidad_kg, inventario)
 
         orden_id = str(uuid.uuid4())
@@ -179,7 +187,7 @@ class CalcularExplosionBatch:
         ordenes: list[dict],
         usuario: str,
     ) -> list[dict]:
-        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()}
+        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()[0]}
         resultados = []
 
         for orden in ordenes:
@@ -217,3 +225,23 @@ class CalcularExplosionBatch:
                 )
 
         return resultados
+
+
+class CambiarEstadoOrden:
+    def __init__(self, repo_ordenes: RepositorioOrdenes) -> None:
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(self, id_orden: str, nuevo_estado: str) -> dict:
+        orden = self._repo_ordenes.obtener(id_orden)
+        if not orden:
+            return {"error": f"Orden '{id_orden}' no encontrada"}
+
+        error = validar_transicion_orden(orden["estado"], nuevo_estado)
+        if error:
+            return {"error": error}
+
+        if nuevo_estado == "completada":
+            self._repo_ordenes.consumir_inventario_orden(id_orden)
+
+        self._repo_ordenes.actualizar_estado(id_orden, nuevo_estado)
+        return {"mensaje": f"Orden '{id_orden[:8]}…' ahora está en '{nuevo_estado}'", "estado": nuevo_estado}

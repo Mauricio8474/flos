@@ -42,6 +42,11 @@ flos/
             └── repositories.py       # PostgreSQL + SQLAlchemy
 ```
 
+## URLs
+- **Frontend (Dashboard):** `http://localhost:8001/dashboard/`
+- **API base:** `http://localhost:8001/`
+- **Documentación OpenAPI:** `http://localhost:8001/docs`
+
 ## Convenciones generales
 - **Idioma:** Español para nombres de archivos y documentación; código y commits en inglés.
 - **Commits:** Prefijo conventional commit en inglés (`feat:`, `fix:`, `refactor:`, `docs:`).

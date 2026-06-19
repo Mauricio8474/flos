@@ -30,3 +30,20 @@ class ResultadoExplosion:
     faltante_kg: float
     cubierto: bool
     nota: str = ""
+
+
+ESTADOS_ORDEN = frozenset({"pendiente", "en_produccion", "completada"})
+
+TRANSICIONES_ORDEN: dict[str, str] = {
+    "pendiente": "en_produccion",
+    "en_produccion": "completada",
+}
+
+
+def validar_transicion_orden(estado_actual: str, nuevo_estado: str) -> str | None:
+    esperado = TRANSICIONES_ORDEN.get(estado_actual)
+    if esperado is None:
+        return f"Estado '{estado_actual}' no permite transiciones"
+    if nuevo_estado != esperado:
+        return f"No se puede pasar de '{estado_actual}' a '{nuevo_estado}'. Solo se permite '{estado_actual}' → '{esperado}'"
+    return None
