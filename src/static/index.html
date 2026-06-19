@@ -108,6 +108,8 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <button onclick="showTab('inventario')">Inventario</button>
   <button onclick="showTab('explosion')">Explosión</button>
   <button onclick="showTab('ordenes')">Órdenes</button>
+  <button onclick="showTab('alertas')">Alertas</button>
+  <button onclick="showTab('compras')">Compras</button>
   <button id="nav-auditoria" onclick="showTab('auditoria')">Auditoría</button>
   <button id="nav-usuarios" onclick="showTab('usuarios')">Usuarios</button>
 </nav>
@@ -170,7 +172,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <div id="loading-inventario" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <input type="search" class="search-bar" id="search-inventario" placeholder="Buscar en inventario…" onkeyup="filtrarTabla('inventario')">
     <table id="tabla-inventario" style="display:none">
-      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad (kg)</th><th>Costo Unitario</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad (kg)</th><th>Stock mínimo</th><th>Costo Unitario</th></tr></thead>
       <tbody id="tbody-inventario"></tbody>
     </table>
   </div>
@@ -219,6 +221,30 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <table id="tabla-ordenes" style="display:none">
       <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Estado</th><th>Usuario</th><th>Fecha</th><th>Detalle</th><th id="th-acciones-orden">Acciones</th></tr></thead>
       <tbody id="tbody-ordenes"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-alertas">
+  <div class="card">
+    <h2>Alertas de stock</h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Materiales por debajo del stock mínimo configurado.</p>
+    <div id="loading-alertas" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-alertas" style="display:none">
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Stock actual (kg)</th><th>Stock mínimo (kg)</th><th>Faltante (kg)</th></tr></thead>
+      <tbody id="tbody-alertas"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-compras">
+  <div class="card">
+    <h2>Sugerencias de compra</h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Materiales que deben comprarse para cubrir faltantes en órdenes activas y stock mínimo.</p>
+    <div id="loading-compras" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-compras" style="display:none">
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad requerida (kg)</th><th>Origen</th><th>ID Orden</th></tr></thead>
+      <tbody id="tbody-compras"></tbody>
     </table>
   </div>
 </section>
@@ -366,6 +392,8 @@ function showTab(name) {
   else if (name === 'inventario') cargarInventario();
   else if (name === 'explosion') { cargarSelectorFormulas(); }
   else if (name === 'ordenes') cargarOrdenes();
+  else if (name === 'alertas') cargarAlertas();
+  else if (name === 'compras') cargarSugerenciasCompra();
   else if (name === 'auditoria') cargarAuditoria();
   else if (name === 'usuarios') cargarUsuarios();
   else if (name === 'dashboard') cargarDashboard();
@@ -550,9 +578,28 @@ function cargarInventario(page, pageSize) {
     if (!items.length) { if (el) el.textContent = 'Inventario vacío.'; return; }
     document.getElementById('tabla-inventario').style.display = '';
     items.sort((a,b) => a.sku.localeCompare(b.sku));
+    const puedeEditarInv = ['admin','ingenieria','almacen'].includes(USUARIO.rol);
     document.getElementById('tbody-inventario').innerHTML = items.map(i =>
-      `<tr><td>${i.sku}</td><td>${i.nombre || ''}</td><td>${i.cantidad_kg} kg</td><td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td></tr>`
+      `<tr>
+        <td><strong>${i.sku}</strong></td>
+        <td>${i.nombre || ''}</td>
+        <td>${i.cantidad_kg} kg</td>
+        <td>${puedeEditarInv
+          ? `<input type="number" id="sm-${i.sku}" value="${i.stock_minimo || 0}" step="0.1" min="0" style="width:80px;padding:0.25rem 0.4rem;border:1px solid #ccc;border-radius:3px" onchange="actualizarStockMinimo('${i.sku}', this.value)">
+             <span id="sm-msg-${i.sku}" style="font-size:0.75rem;color:#2e7d32;display:none">✓</span>`
+          : (i.stock_minimo || 0) + ' kg'}
+        </td>
+        <td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td>
+      </tr>`
     ).join('');
+  });
+}
+
+function actualizarStockMinimo(sku, valor) {
+  const fd = new FormData(); fd.append('stock_minimo', parseFloat(valor) || 0);
+  api(`/produccion/inventario/${sku}`, {method:'PUT', body: fd}).then(d => {
+    const msg = document.getElementById(`sm-msg-${sku}`);
+    if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 1500); }
   });
 }
 
@@ -642,6 +689,35 @@ function mostrarResultadosBatch(data) {
   document.getElementById('tbody-resultados').innerHTML = data.map(r =>
     `<tr><td>${r.orden}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
   ).join('');
+}
+
+// --- ALERTAS ---
+function cargarAlertas() {
+  const el = document.getElementById('loading-alertas'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-alertas').style.display = 'none';
+  api('/alertas/stock').then(data => {
+    if (el) el.style.display = 'none';
+    if (!Array.isArray(data) || !data.length) { if (el) el.textContent = 'No hay alertas de stock.'; return; }
+    document.getElementById('tabla-alertas').style.display = '';
+    document.getElementById('tbody-alertas').innerHTML = data.map(a =>
+      `<tr><td><strong>${a.sku}</strong></td><td>${a.nombre}</td><td style="color:#c62828">${a.cantidad_kg} kg</td><td>${a.stock_minimo} kg</td><td style="color:#c62828;font-weight:600">${a.faltante} kg</td></tr>`
+    ).join('');
+  });
+}
+
+// --- COMPRAS ---
+function cargarSugerenciasCompra() {
+  const el = document.getElementById('loading-compras'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-compras').style.display = 'none';
+  api('/sugerencias-compra').then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.sugerencias || [];
+    if (!items.length) { if (el) el.textContent = 'No hay sugerencias de compra.'; return; }
+    document.getElementById('tabla-compras').style.display = '';
+    document.getElementById('tbody-compras').innerHTML = items.map(s =>
+      `<tr><td><strong>${s.sku}</strong></td><td>${s.nombre}</td><td style="font-weight:600">${s.cantidad_requerida} kg</td><td><span class="badge ${s.origen === 'orden_faltante' ? 'fail' : 'warn'}">${s.origen === 'orden_faltante' ? 'Faltante en orden' : 'Stock mínimo'}</span></td><td style="font-size:0.8rem;font-family:monospace">${s.id_orden ? s.id_orden.slice(0,8)+'…' : '-'}</td></tr>`
+    ).join('');
+  });
 }
 
 // --- AUDITORIA ---

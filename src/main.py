@@ -25,7 +25,7 @@ from src.infrastructure.auth import (
 
 from src.domain.models import ComponenteFormula, Formula, ItemInventario
 from src.domain.services import CalculadorMRP
-from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden
+from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden, GenerarAlertasStock, GenerarSugerenciasCompra
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
@@ -115,6 +115,8 @@ def startup():
         app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
     )
     app.state.caso_cambiar_estado_orden = CambiarEstadoOrden(app.state.repo_ordenes)
+    app.state.caso_generar_alertas = GenerarAlertasStock(app.state.repo_inventario)
+    app.state.caso_generar_sugerencias = GenerarSugerenciasCompra(app.state.repo_inventario, app.state.repo_ordenes)
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -167,6 +169,14 @@ def _caso_calcular_explosion_batch():
 
 def _caso_cambiar_estado_orden():
     return app.state.caso_cambiar_estado_orden
+
+
+def _caso_generar_alertas():
+    return app.state.caso_generar_alertas
+
+
+def _caso_generar_sugerencias():
+    return app.state.caso_generar_sugerencias
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -380,6 +390,31 @@ def obtener_inventario(page: int = 0, page_size: int = 0) -> dict:
         page = 1
         page_size = total if total > 0 else 1
     return _paginar(data, total, page, page_size)
+
+
+@app.put("/produccion/inventario/{sku}", dependencies=[Depends(requerir_rol("admin", "ingenieria", "almacen"))])
+def actualizar_stock_minimo(sku: str, stock_minimo: float = Form(...)) -> dict:
+    item = _repo_inventario().obtener(sku)
+    if not item:
+        return {"error": f"SKU '{sku}' no encontrado"}
+    _repo_inventario().actualizar_stock_minimo(sku, stock_minimo)
+    return {"mensaje": f"Stock mínimo de '{sku}' actualizado a {stock_minimo} kg"}
+
+
+# ---------------------------------------------------------------------------
+# Alertas de stock
+# ---------------------------------------------------------------------------
+@app.get("/alertas/stock", dependencies=[Depends(obtener_usuario_actual)])
+def listar_alertas_stock() -> list[dict]:
+    return _caso_generar_alertas().ejecutar()
+
+
+# ---------------------------------------------------------------------------
+# Sugerencias de compra
+# ---------------------------------------------------------------------------
+@app.get("/sugerencias-compra", dependencies=[Depends(obtener_usuario_actual)])
+def listar_sugerencias_compra() -> dict:
+    return {"sugerencias": _caso_generar_sugerencias().ejecutar()}
 
 
 # ---------------------------------------------------------------------------

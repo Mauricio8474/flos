@@ -1,8 +1,11 @@
 ﻿from abc import ABC, abstractmethod
 import uuid
 
-from src.domain.models import ComponenteFormula, Formula, ItemInventario, ResultadoExplosion, ESTADOS_ORDEN, validar_transicion_orden
-from src.domain.services import CalculadorMRP
+from src.domain.models import (
+    AlertaStock, ComponenteFormula, Formula, ItemInventario,
+    ResultadoExplosion, SugerenciaCompra, ESTADOS_ORDEN, validar_transicion_orden,
+)
+from src.domain.services import CalculadorMRP, GeneradorAlertasStock, GeneradorSugerenciasCompra
 
 
 class PuertoInventario(ABC):
@@ -46,6 +49,18 @@ class RepositorioInventario(ABC):
 
     @abstractmethod
     def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
+        ...
+
+    @abstractmethod
+    def obtener(self, sku: str) -> ItemInventario | None:
+        ...
+
+    @abstractmethod
+    def actualizar_stock_minimo(self, sku: str, stock_minimo: float) -> bool:
+        ...
+
+    @abstractmethod
+    def obtener_ordenes_con_faltantes(self) -> list[dict]:
         ...
 
 
@@ -245,3 +260,34 @@ class CambiarEstadoOrden:
 
         self._repo_ordenes.actualizar_estado(id_orden, nuevo_estado)
         return {"mensaje": f"Orden '{id_orden[:8]}…' ahora está en '{nuevo_estado}'", "estado": nuevo_estado}
+
+
+class GenerarAlertasStock:
+    def __init__(self, repo_inventario: RepositorioInventario) -> None:
+        self._repo_inventario = repo_inventario
+
+    def ejecutar(self) -> list[dict]:
+        inventario, _ = self._repo_inventario.obtener_todos()
+        alertas = GeneradorAlertasStock.generar(inventario)
+        return [
+            {"sku": a.sku, "nombre": a.nombre, "cantidad_kg": a.cantidad_kg, "stock_minimo": a.stock_minimo, "faltante": a.faltante}
+            for a in alertas
+        ]
+
+
+class GenerarSugerenciasCompra:
+    def __init__(self, repo_inventario: RepositorioInventario, repo_ordenes: RepositorioOrdenes) -> None:
+        self._repo_inventario = repo_inventario
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(self) -> dict:
+        inventario, _ = self._repo_inventario.obtener_todos()
+        inv_dict = {i.sku: i for i in inventario}
+        ordenes_faltantes = self._repo_inventario.obtener_ordenes_con_faltantes()
+        desde_ordenes = GeneradorSugerenciasCompra.desde_faltantes_ordenes(ordenes_faltantes, inv_dict)
+        desde_minimo = GeneradorSugerenciasCompra.desde_stock_minimo(inventario)
+        todas = desde_ordenes + desde_minimo
+        return [
+            {"sku": s.sku, "nombre": s.nombre, "cantidad_requerida": s.cantidad_requerida, "origen": s.origen, "id_orden": s.id_orden}
+            for s in todas
+        ]

@@ -33,6 +33,7 @@ class InventarioORM(Base):
     nombre = Column(String, default="")
     cantidad_kg = Column(Float, nullable=False, default=0.0)
     costo_unitario = Column(Float, default=0.0)
+    stock_minimo = Column(Float, default=0.0)
 
 
 class OrdenProduccionORM(Base):
@@ -246,6 +247,7 @@ class PostgresRepositorioInventario(RepositorioInventario):
                         nombre=item.nombre,
                         cantidad_kg=item.cantidad_kg,
                         costo_unitario=item.costo_unitario,
+                        stock_minimo=item.stock_minimo,
                     )
                 )
             session.commit()
@@ -259,9 +261,63 @@ class PostgresRepositorioInventario(RepositorioInventario):
             else:
                 rows = query.all()
             return [
-                ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario)
+                ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario, stock_minimo=r.stock_minimo or 0.0)
                 for r in rows
             ], total
+
+    def obtener(self, sku: str) -> ItemInventario | None:
+        with self._sf() as session:
+            r = session.query(InventarioORM).filter_by(sku=sku).first()
+            if not r:
+                return None
+            return ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario, stock_minimo=r.stock_minimo or 0.0)
+
+    def actualizar_stock_minimo(self, sku: str, stock_minimo: float) -> bool:
+        with self._sf() as session:
+            r = session.query(InventarioORM).filter_by(sku=sku).first()
+            if not r:
+                return False
+            r.stock_minimo = stock_minimo
+            session.commit()
+            return True
+
+    def obtener_ordenes_con_faltantes(self) -> list[dict]:
+        with self._sf() as session:
+            from sqlalchemy import text
+            rows = session.execute(
+                text("""
+                    SELECT o.id, o.id_formula, o.nombre_formula, o.cantidad_kg
+                    FROM ordenes_produccion o
+                    WHERE o.estado IN ('pendiente', 'en_produccion')
+                    ORDER BY o.creado_en DESC
+                """)
+            ).fetchall()
+            ids = [r[0] for r in rows]
+            if not ids:
+                return []
+            detalles_rows = session.execute(
+                text("""
+                    SELECT d.id_orden, d.sku, d.nombre, d.requerido_kg, d.disponible_kg, d.faltante_kg, d.cubierto, d.nota
+                    FROM detalle_orden d
+                    WHERE d.id_orden = ANY(:ids) AND d.cubierto = 0 AND d.faltante_kg > 0
+                    ORDER BY d.id_orden, d.id
+                """),
+                {"ids": ids},
+            ).fetchall()
+            detalles_por_orden: dict[str, list[dict]] = {}
+            for row in detalles_rows:
+                oid = row[0]
+                if oid not in detalles_por_orden:
+                    detalles_por_orden[oid] = []
+                detalles_por_orden[oid].append({
+                    "sku": row[1], "nombre": row[2], "requerido_kg": float(row[3]),
+                    "disponible_kg": float(row[4]), "faltante_kg": float(row[5]),
+                    "cubierto": bool(row[6]), "nota": row[7],
+                })
+            return [
+                {"id": r[0], "id_formula": r[1], "nombre_formula": r[2], "cantidad_kg": float(r[3]), "detalles": detalles_por_orden.get(r[0], [])}
+                for r in rows
+            ]
 
 
 class PostgresRepositorioOrdenes(RepositorioOrdenes):
@@ -469,6 +525,8 @@ def init_db(database_url: str) -> sessionmaker:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN nombre VARCHAR DEFAULT ''"))
         if "costo_unitario" not in columns:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN costo_unitario FLOAT DEFAULT 0.0"))
+        if "stock_minimo" not in columns:
+            conn.execute(text("ALTER TABLE inventario ADD COLUMN stock_minimo FLOAT DEFAULT 0.0"))
 
         indexes = {ix["name"] for ix in inspector.get_indexes("componentes_formula")}
         if "ix_componentes_formula_id_formula" not in indexes:

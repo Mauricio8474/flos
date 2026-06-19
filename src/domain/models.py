@@ -19,6 +19,25 @@ class ItemInventario:
     nombre: str
     cantidad_kg: float
     costo_unitario: float
+    stock_minimo: float = 0.0
+
+
+@dataclass(frozen=True)
+class AlertaStock:
+    sku: str
+    nombre: str
+    cantidad_kg: float
+    stock_minimo: float
+    faltante: float
+
+
+@dataclass(frozen=True)
+class SugerenciaCompra:
+    sku: str
+    nombre: str
+    cantidad_requerida: float
+    origen: str  # "stock_minimo" | "orden_faltante"
+    id_orden: str = ""
 
 
 @dataclass(frozen=True)
