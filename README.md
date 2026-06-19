@@ -29,10 +29,11 @@ docker compose up -d flos-db
 pip install -r requirements.txt
 
 # Ejecutar la aplicación
+docker-compose up -d --build
 uvicorn src.main:app --reload
 ```
 
-La API estará disponible en `http://localhost:8000/docs`
+La API estará disponible en `http://localhost:8001/docs`
 
 ## Funcionalidades
 
