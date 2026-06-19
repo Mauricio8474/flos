@@ -1,7 +1,6 @@
 ﻿import io
 import logging
 import os
-import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -26,6 +25,7 @@ from src.infrastructure.auth import (
 
 from src.domain.models import ComponenteFormula, Formula, ItemInventario
 from src.domain.services import CalculadorMRP
+from src.application.use_cases import CalcularExplosion, CalcularExplosionBatch
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
@@ -108,6 +108,12 @@ def startup():
     app.state.repo_auditoria = PostgresRepositorioAuditoria(sf)
     app.state.repo_usuarios = PostgresRepositorioUsuario(sf)
     app.state.repo_ordenes = PostgresRepositorioOrdenes(sf)
+    app.state.caso_calcular_explosion = CalcularExplosion(
+        app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
+    )
+    app.state.caso_calcular_explosion_batch = CalcularExplosionBatch(
+        app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
+    )
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -136,6 +142,14 @@ def _repo_usuarios():
 
 def _repo_ordenes():
     return app.state.repo_ordenes
+
+
+def _caso_calcular_explosion():
+    return app.state.caso_calcular_explosion
+
+
+def _caso_calcular_explosion_batch():
+    return app.state.caso_calcular_explosion_batch
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -355,56 +369,6 @@ def _inventario_a_dict(items: list) -> dict[str, ItemInventario]:
     return {i.sku: i for i in items}
 
 
-def _detalles_from_resultados(resultados) -> list[dict]:
-    return [
-        {
-            "sku": r.sku,
-            "nombre": r.nombre,
-            "requerido_kg": r.requerido_kg,
-            "disponible_kg": r.disponible_kg,
-            "faltante_kg": r.faltante_kg,
-            "cubierto": r.cubierto,
-            "nota": r.nota,
-        }
-        for r in resultados
-    ]
-
-
-def _guardar_orden(
-    id_formula: str,
-    nombre_formula: str,
-    cantidad_kg: float,
-    usuario: str,
-    resultados,
-) -> str:
-    orden_id = str(uuid.uuid4())
-    _repo_ordenes().guardar(
-        id_orden=orden_id,
-        id_formula=id_formula,
-        nombre_formula=nombre_formula,
-        cantidad_kg=cantidad_kg,
-        usuario=usuario,
-        detalles=_detalles_from_resultados(resultados),
-    )
-    return orden_id
-
-
-def _resultado_a_dict(r, orden_id="", orden=""):
-    d = {
-        "sku": r.sku,
-        "nombre": r.nombre,
-        "requerido_kg": r.requerido_kg,
-        "disponible_kg": r.disponible_kg,
-        "faltante_kg": r.faltante_kg,
-        "cubierto": r.cubierto,
-        "nota": r.nota,
-        "orden_id": orden_id,
-    }
-    if orden:
-        d["orden"] = orden
-    return d
-
-
 # ---------------------------------------------------------------------------
 # Explosión
 # ---------------------------------------------------------------------------
@@ -414,13 +378,12 @@ def calcular_explosion(
     cantidad_a_producir_kg: float = Form(...),
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
-    formula = _repo_formula().obtener(id_formula)
-    if not formula:
-        return [{"error": f"Formula '{id_formula}' no encontrada"}]
-    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
-    orden_id = _guardar_orden(id_formula, formula.nombre, cantidad_a_producir_kg, usuario["sub"], resultados)
-    return [_resultado_a_dict(r, orden_id=orden_id) for r in resultados]
+    resultados, error = _caso_calcular_explosion().ejecutar(
+        id_formula, cantidad_a_producir_kg, usuario["sub"],
+    )
+    if error:
+        return [{"error": error}]
+    return resultados
 
 
 @app.post("/produccion/calcular-explosion/batch", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
@@ -428,19 +391,10 @@ def calcular_explosion_batch(
     ordenes: list[OrdenBatch],
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
-    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
-    repo = _repo_formula()
-    resultados = []
-    for orden in ordenes:
-        formula = repo.obtener(orden.id_formula)
-        if not formula:
-            resultados.append({"orden": orden.id_formula, "error": "Formula no encontrada"})
-            continue
-        res = CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario)
-        orden_id = _guardar_orden(orden.id_formula, formula.nombre, orden.cantidad, usuario["sub"], res)
-        for r in res:
-            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden.id_formula))
-    return resultados
+    return _caso_calcular_explosion_batch().ejecutar(
+        [{"id_formula": o.id_formula, "cantidad": o.cantidad} for o in ordenes],
+        usuario["sub"],
+    )
 
 
 @app.post("/produccion/calcular-explosion/batch/excel", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
@@ -475,19 +429,7 @@ def calcular_explosion_batch_excel(
             ordenes.append({"id_formula": ref, "cantidad": cant})
     if not ordenes:
         return [{"error": "No se encontraron órdenes válidas en el Excel"}]
-    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
-    repo = _repo_formula()
-    resultados = []
-    for orden in ordenes:
-        formula = repo.obtener(orden["id_formula"])
-        if not formula:
-            resultados.append({"orden": orden["id_formula"], "error": "Formula no encontrada"})
-            continue
-        res = CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario)
-        orden_id = _guardar_orden(orden["id_formula"], formula.nombre, orden["cantidad"], usuario["sub"], res)
-        for r in res:
-            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden["id_formula"]))
-    return resultados
+    return _caso_calcular_explosion_batch().ejecutar(ordenes, usuario["sub"])
 
 
 def _generar_excel_resultados(resultados, id_formula) -> StreamingResponse:

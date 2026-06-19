@@ -3,7 +3,7 @@
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioUsuario
+from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioOrdenes, RepositorioUsuario
 from src.domain.models import ItemInventario
 from src.domain.models import ComponenteFormula, Formula
 
@@ -249,7 +249,7 @@ class PostgresRepositorioInventario(RepositorioInventario):
             ]
 
 
-class PostgresRepositorioOrdenes:
+class PostgresRepositorioOrdenes(RepositorioOrdenes):
     def __init__(self, session_factory: sessionmaker) -> None:
         self._sf = session_factory
 

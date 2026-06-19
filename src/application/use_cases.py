@@ -1,6 +1,8 @@
 ﻿from abc import ABC, abstractmethod
+import uuid
 
-from src.domain.models import ComponenteFormula, Formula, ItemInventario
+from src.domain.models import ComponenteFormula, Formula, ItemInventario, ResultadoExplosion
+from src.domain.services import CalculadorMRP
 
 
 class PuertoInventario(ABC):
@@ -73,3 +75,145 @@ class RepositorioAuditoria(ABC):
     @abstractmethod
     def listar(self, limite: int = 100) -> list[dict]:
         ...
+
+
+class RepositorioOrdenes(ABC):
+    @abstractmethod
+    def guardar(self, id_orden: str, id_formula: str, nombre_formula: str, cantidad_kg: float, usuario: str, detalles: list[dict]) -> None:
+        ...
+
+    @abstractmethod
+    def listar(self, limite: int = 100) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def obtener(self, id_orden: str) -> dict | None:
+        ...
+
+    @abstractmethod
+    def eliminar(self, id_orden: str) -> bool:
+        ...
+
+    @abstractmethod
+    def estadisticas(self) -> dict:
+        ...
+
+
+def _detalles_from_resultados(resultados: list[ResultadoExplosion]) -> list[dict]:
+    return [
+        {
+            "sku": r.sku,
+            "nombre": r.nombre,
+            "requerido_kg": r.requerido_kg,
+            "disponible_kg": r.disponible_kg,
+            "faltante_kg": r.faltante_kg,
+            "cubierto": r.cubierto,
+            "nota": r.nota,
+        }
+        for r in resultados
+    ]
+
+
+class CalcularExplosion:
+    def __init__(
+        self,
+        repo_formula: RepositorioFormula,
+        repo_inventario: RepositorioInventario,
+        repo_ordenes: RepositorioOrdenes,
+    ) -> None:
+        self._repo_formula = repo_formula
+        self._repo_inventario = repo_inventario
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(
+        self,
+        id_formula: str,
+        cantidad_kg: float,
+        usuario: str,
+    ) -> tuple[list[dict], str | None]:
+        formula = self._repo_formula.obtener(id_formula)
+        if not formula:
+            return [], f"Formula '{id_formula}' no encontrada"
+
+        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()}
+        resultados = CalculadorMRP.calcular_explosion(formula, cantidad_kg, inventario)
+
+        orden_id = str(uuid.uuid4())
+        self._repo_ordenes.guardar(
+            id_orden=orden_id,
+            id_formula=id_formula,
+            nombre_formula=formula.nombre,
+            cantidad_kg=cantidad_kg,
+            usuario=usuario,
+            detalles=_detalles_from_resultados(resultados),
+        )
+
+        return [
+            {
+                "sku": r.sku,
+                "nombre": r.nombre,
+                "requerido_kg": r.requerido_kg,
+                "disponible_kg": r.disponible_kg,
+                "faltante_kg": r.faltante_kg,
+                "cubierto": r.cubierto,
+                "nota": r.nota,
+                "orden_id": orden_id,
+            }
+            for r in resultados
+        ], None
+
+
+class CalcularExplosionBatch:
+    def __init__(
+        self,
+        repo_formula: RepositorioFormula,
+        repo_inventario: RepositorioInventario,
+        repo_ordenes: RepositorioOrdenes,
+    ) -> None:
+        self._repo_formula = repo_formula
+        self._repo_inventario = repo_inventario
+        self._repo_ordenes = repo_ordenes
+
+    def ejecutar(
+        self,
+        ordenes: list[dict],
+        usuario: str,
+    ) -> list[dict]:
+        inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()}
+        resultados = []
+
+        for orden in ordenes:
+            id_formula = orden["id_formula"]
+            cantidad = orden["cantidad"]
+            formula = self._repo_formula.obtener(id_formula)
+            if not formula:
+                resultados.append({"orden": id_formula, "error": "Formula no encontrada"})
+                continue
+
+            res = CalculadorMRP.calcular_explosion(formula, cantidad, inventario)
+            orden_id = str(uuid.uuid4())
+            self._repo_ordenes.guardar(
+                id_orden=orden_id,
+                id_formula=id_formula,
+                nombre_formula=formula.nombre,
+                cantidad_kg=cantidad,
+                usuario=usuario,
+                detalles=_detalles_from_resultados(res),
+            )
+
+            for r in res:
+                resultados.append(
+                    {
+                        "orden": id_formula,
+                        "orden_id": orden_id,
+                        "sku": r.sku,
+                        "nombre": r.nombre,
+                        "requerido_kg": r.requerido_kg,
+                        "disponible_kg": r.disponible_kg,
+                        "faltante_kg": r.faltante_kg,
+                        "cubierto": r.cubierto,
+                        "nota": r.nota,
+                    }
+                )
+
+        return resultados
