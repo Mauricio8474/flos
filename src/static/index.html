@@ -64,6 +64,11 @@ input[type="file"] { padding: 0.4rem; }
 .hidden { display: none !important; }
 .search-bar { width: 100%; max-width: 350px; padding: 0.45rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; margin-bottom: 0.75rem; }
 .search-bar:focus { outline: none; border-color: #1a237e; }
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: 3px; border: none; cursor: pointer; background: #1a237e; color: #fff; }
+.btn-sm:hover { background: #283593; }
+.btn-sm.danger { background: #c62828; }
+.btn-sm.danger:hover { background: #e53935; }
+.badge.warn { background: #fff3e0; color: #e65100; }
 textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; width: 100%; }
 </style>
 </head>
@@ -103,6 +108,9 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <button onclick="showTab('inventario')">Inventario</button>
   <button onclick="showTab('explosion')">Explosión</button>
   <button onclick="showTab('ordenes')">Órdenes</button>
+  <button onclick="showTab('alertas')">Alertas</button>
+  <button onclick="showTab('compras')">Compras</button>
+  <button onclick="showTab('lotes')">Lotes</button>
   <button id="nav-auditoria" onclick="showTab('auditoria')">Auditoría</button>
   <button id="nav-usuarios" onclick="showTab('usuarios')">Usuarios</button>
 </nav>
@@ -165,7 +173,7 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <div id="loading-inventario" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <input type="search" class="search-bar" id="search-inventario" placeholder="Buscar en inventario…" onkeyup="filtrarTabla('inventario')">
     <table id="tabla-inventario" style="display:none">
-      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad (kg)</th><th>Costo Unitario</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad (kg)</th><th>Stock mínimo</th><th>Costo Unitario</th></tr></thead>
       <tbody id="tbody-inventario"></tbody>
     </table>
   </div>
@@ -212,9 +220,56 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <div id="loading-ordenes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
     <input type="search" class="search-bar" id="search-ordenes" placeholder="Buscar orden…" onkeyup="filtrarTabla('ordenes')">
     <table id="tabla-ordenes" style="display:none">
-      <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Usuario</th><th>Fecha</th><th>Componentes</th><th id="th-acciones-orden">Acciones</th></tr></thead>
+      <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Estado</th><th>Usuario</th><th>Fecha</th><th>Detalle</th><th id="th-acciones-orden">Acciones</th></tr></thead>
       <tbody id="tbody-ordenes"></tbody>
     </table>
+  </div>
+</section>
+
+<section id="tab-alertas">
+  <div class="card">
+    <h2>Alertas de stock</h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Materiales por debajo del stock mínimo configurado.</p>
+    <div id="loading-alertas" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-alertas" style="display:none">
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Stock actual (kg)</th><th>Stock mínimo (kg)</th><th>Faltante (kg)</th></tr></thead>
+      <tbody id="tbody-alertas"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-compras">
+  <div class="card">
+    <h2>Sugerencias de compra</h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem">Materiales que deben comprarse para cubrir faltantes en órdenes activas y stock mínimo.</p>
+    <div id="loading-compras" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <table id="tabla-compras" style="display:none">
+      <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad requerida (kg)</th><th>Origen</th><th>ID Orden</th></tr></thead>
+      <tbody id="tbody-compras"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="tab-lotes">
+  <div class="card">
+    <h2>Lotes de producción</h2>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:0.5rem">
+        <label>Buscar lote por código:</label>
+        <input type="text" id="trace-lote-codigo" placeholder="LOTE-001" style="min-width:150px">
+        <button onclick="trazarLote()">Trazar</button>
+      </div>
+    </div>
+    <div id="loading-lotes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
+    <input type="search" class="search-bar" id="search-lotes" placeholder="Buscar lote…" onkeyup="filtrarTabla('lotes')">
+    <table id="tabla-lotes" style="display:none">
+      <thead><tr><th>Código lote</th><th>Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+      <tbody id="tbody-lotes"></tbody>
+    </table>
+  </div>
+  <div id="resultado-trazabilidad" style="display:none" class="card">
+    <h2>Trazabilidad</h2>
+    <div id="trazabilidad-content"></div>
   </div>
 </section>
 
@@ -361,6 +416,9 @@ function showTab(name) {
   else if (name === 'inventario') cargarInventario();
   else if (name === 'explosion') { cargarSelectorFormulas(); }
   else if (name === 'ordenes') cargarOrdenes();
+  else if (name === 'alertas') cargarAlertas();
+  else if (name === 'compras') cargarSugerenciasCompra();
+  else if (name === 'lotes') cargarLotes();
   else if (name === 'auditoria') cargarAuditoria();
   else if (name === 'usuarios') cargarUsuarios();
   else if (name === 'dashboard') cargarDashboard();
@@ -369,12 +427,12 @@ function showTab(name) {
 // --- DASHBOARD ---
 function cargarDashboard() {
   Promise.all([
-    api('/produccion/formulas'),
-    api('/produccion/inventario'),
+    api('/produccion/formulas?page=1&page_size=1'),
+    api('/produccion/inventario?page=1&page_size=1'),
     api('/dashboard/estadisticas'),
   ]).then(([formulas, inv, est]) => {
-    const nf = Array.isArray(formulas) ? formulas.length : 0;
-    const ni = Array.isArray(inv) ? inv.length : 0;
+    const nf = formulas.total || (Array.isArray(formulas) ? formulas.length : 0);
+    const ni = inv.total || (Array.isArray(inv) ? inv.length : 0);
     const totalOrdenes = est.total_ordenes || 0;
     document.getElementById('dashboard-resumen').innerHTML =
       `<div class="card" style="flex:1;min-width:200px"><h3>${nf}</h3><p style="color:#666;font-size:0.85rem">Fórmulas</p></div>` +
@@ -423,16 +481,18 @@ function filtrarTabla(tabla) {
 }
 
 // --- FORMULAS ---
-function cargarFormulas() {
-  const el = document.getElementById('loading-formulas'); el.style.display = 'block';
+function cargarFormulas(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 100;
+  const el = document.getElementById('loading-formulas'); if (el) el.style.display = 'block';
   document.getElementById('tabla-formulas').style.display = 'none';
-  api('/produccion/formulas').then(data => {
-    el.style.display = 'none';
-    if (data.error) { el.textContent = 'Error al cargar fórmulas'; return; }
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay fórmulas registradas.'; return; }
+  api(`/produccion/formulas?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    if (data.error) { if (el) el.textContent = 'Error al cargar fórmulas'; return; }
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay fórmulas registradas.'; return; }
     document.getElementById('tabla-formulas').style.display = '';
     const puedeEditar = ['admin','ingenieria'].includes(USUARIO.rol);
-    document.getElementById('tbody-formulas').innerHTML = data.map(f =>
+    document.getElementById('tbody-formulas').innerHTML = items.map(f =>
       `<tr><td><strong>${f.id}</strong></td><td>${f.nombre}</td><td>${f.componentes.length} componentes</td>` +
       (puedeEditar ? `<td style="display:flex;gap:0.3rem"><button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button><button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button></td>` : '<td>-</td>') +
       `</tr>`
@@ -441,9 +501,10 @@ function cargarFormulas() {
 }
 
 function cargarSelectorFormulas() {
-  api('/produccion/formulas').then(data => {
+  api('/produccion/formulas?page=1&page_size=1000').then(data => {
+    const items = data.items || data;
     const sel = document.getElementById('explosion-formula');
-    if (Array.isArray(data)) sel.innerHTML = data.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
+    if (items.length) sel.innerHTML = items.map(f => `<option value="${f.id}">${f.id} - ${f.nombre}</option>`).join('');
   });
 }
 
@@ -531,18 +592,39 @@ function descargarFormulas() {
 }
 
 // --- INVENTARIO ---
-function cargarInventario() {
-  const el = document.getElementById('loading-inventario'); el.style.display = 'block';
+function cargarInventario(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 100;
+  const el = document.getElementById('loading-inventario'); if (el) el.style.display = 'block';
   document.getElementById('tabla-inventario').style.display = 'none';
-  api('/produccion/inventario').then(data => {
-    el.style.display = 'none';
-    if (data.error) { el.textContent = 'Error al cargar inventario'; return; }
-    if (!data || !data.length) { el.textContent = 'Inventario vacío.'; return; }
+  api(`/produccion/inventario?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    if (data.error) { if (el) el.textContent = 'Error al cargar inventario'; return; }
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'Inventario vacío.'; return; }
     document.getElementById('tabla-inventario').style.display = '';
-    data.sort((a,b) => a.sku.localeCompare(b.sku));
-    document.getElementById('tbody-inventario').innerHTML = data.map(i =>
-      `<tr><td>${i.sku}</td><td>${i.nombre || ''}</td><td>${i.cantidad_kg} kg</td><td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td></tr>`
+    items.sort((a,b) => a.sku.localeCompare(b.sku));
+    const puedeEditarInv = ['admin','ingenieria','almacen'].includes(USUARIO.rol);
+    document.getElementById('tbody-inventario').innerHTML = items.map(i =>
+      `<tr>
+        <td><strong>${i.sku}</strong></td>
+        <td>${i.nombre || ''}</td>
+        <td>${i.cantidad_kg} kg</td>
+        <td>${puedeEditarInv
+          ? `<input type="number" id="sm-${i.sku}" value="${i.stock_minimo || 0}" step="0.1" min="0" style="width:80px;padding:0.25rem 0.4rem;border:1px solid #ccc;border-radius:3px" onchange="actualizarStockMinimo('${i.sku}', this.value)">
+             <span id="sm-msg-${i.sku}" style="font-size:0.75rem;color:#2e7d32;display:none">✓</span>`
+          : (i.stock_minimo || 0) + ' kg'}
+        </td>
+        <td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td>
+      </tr>`
     ).join('');
+  });
+}
+
+function actualizarStockMinimo(sku, valor) {
+  const fd = new FormData(); fd.append('stock_minimo', parseFloat(valor) || 0);
+  api(`/produccion/inventario/${sku}`, {method:'PUT', body: fd}).then(d => {
+    const msg = document.getElementById(`sm-msg-${sku}`);
+    if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 1500); }
   });
 }
 
@@ -634,15 +716,99 @@ function mostrarResultadosBatch(data) {
   ).join('');
 }
 
+// --- ALERTAS ---
+function cargarAlertas() {
+  const el = document.getElementById('loading-alertas'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-alertas').style.display = 'none';
+  api('/alertas/stock').then(data => {
+    if (el) el.style.display = 'none';
+    if (!Array.isArray(data) || !data.length) { if (el) el.textContent = 'No hay alertas de stock.'; return; }
+    document.getElementById('tabla-alertas').style.display = '';
+    document.getElementById('tbody-alertas').innerHTML = data.map(a =>
+      `<tr><td><strong>${a.sku}</strong></td><td>${a.nombre}</td><td style="color:#c62828">${a.cantidad_kg} kg</td><td>${a.stock_minimo} kg</td><td style="color:#c62828;font-weight:600">${a.faltante} kg</td></tr>`
+    ).join('');
+  });
+}
+
+// --- COMPRAS ---
+function cargarSugerenciasCompra() {
+  const el = document.getElementById('loading-compras'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-compras').style.display = 'none';
+  api('/sugerencias-compra').then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.sugerencias || [];
+    if (!items.length) { if (el) el.textContent = 'No hay sugerencias de compra.'; return; }
+    document.getElementById('tabla-compras').style.display = '';
+    document.getElementById('tbody-compras').innerHTML = items.map(s =>
+      `<tr><td><strong>${s.sku}</strong></td><td>${s.nombre}</td><td style="font-weight:600">${s.cantidad_requerida} kg</td><td><span class="badge ${s.origen === 'orden_faltante' ? 'fail' : 'warn'}">${s.origen === 'orden_faltante' ? 'Faltante en orden' : 'Stock mínimo'}</span></td><td style="font-size:0.8rem;font-family:monospace">${s.id_orden ? s.id_orden.slice(0,8)+'…' : '-'}</td></tr>`
+    ).join('');
+  });
+}
+
+// --- LOTES ---
+function cargarLotes(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-lotes'); if (el) el.style.display = 'block';
+  document.getElementById('tabla-lotes').style.display = 'none';
+  api(`/lotes?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay lotes registrados.'; return; }
+    document.getElementById('tabla-lotes').style.display = '';
+    const esAdmin = USUARIO.rol === 'admin';
+    document.getElementById('tbody-lotes').innerHTML = items.map(l =>
+      `<tr>
+        <td><strong>${l.codigo_lote}</strong></td>
+        <td style="font-size:0.75rem;font-family:monospace">${l.id_orden.slice(0,8)}…</td>
+        <td>${l.id_formula}</td>
+        <td>${l.nombre_formula}</td>
+        <td>${l.cantidad_producida} kg</td>
+        <td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td>
+        <td style="font-size:0.8rem">${l.creado_en ? new Date(l.creado_en).toLocaleString() : '-'}</td>
+        <td style="white-space:nowrap">
+          ${l.estado !== 'liberado' ? `<button class="btn-sm success" onclick="cambiarEstadoLote('${l.id}','liberado')">Liberar</button>` : ''}
+          ${l.estado !== 'bloqueado' ? `<button class="btn-sm danger" onclick="cambiarEstadoLote('${l.id}','bloqueado')">Bloquear</button>` : ''}
+        </td>
+      </tr>`
+    ).join('');
+  });
+}
+
+function cambiarEstadoLote(id, estado) {
+  const fd = new FormData(); fd.append('estado', estado);
+  api(`/lotes/${id}/estado`, {method:'PUT', body: fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarLotes(); });
+}
+
+function trazarLote() {
+  const codigo = document.getElementById('trace-lote-codigo').value.trim();
+  if (!codigo) { toast('Ingrese un código de lote', 'error'); return; }
+  api(`/lotes/${codigo}/trazabilidad`).then(data => {
+    if (data.error) { toast(data.error, 'error'); document.getElementById('resultado-trazabilidad').style.display = 'none'; return; }
+    document.getElementById('resultado-trazabilidad').style.display = '';
+    const l = data.lote || {};
+    const o = data.orden || {};
+    const detalles = (o.detalles || []).map(d =>
+      `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td></tr>`
+    ).join('');
+    document.getElementById('trazabilidad-content').innerHTML =
+      `<p><strong>Lote:</strong> ${l.codigo_lote} | <strong>Estado:</strong> <span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span> | <strong>Cantidad:</strong> ${l.cantidad_producida} kg</p>
+       <p><strong>Orden:</strong> ${o.id || l.id_orden} | <strong>Fórmula:</strong> ${o.id_formula} — ${o.nombre_formula}</p>
+       <h3 style="font-size:0.9rem;margin-top:1rem;color:#1a237e">Materiales utilizados</h3>
+       <table><thead><tr><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th></tr></thead><tbody>${detalles || '<tr><td colspan="6">Sin detalles</td></tr>'}</tbody></table>`;
+  });
+}
+
 // --- AUDITORIA ---
-function cargarAuditoria() {
-  const el = document.getElementById('loading-auditoria'); el.style.display = 'block';
+function cargarAuditoria(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-auditoria'); if (el) el.style.display = 'block';
   document.getElementById('tabla-auditoria').style.display = 'none';
-  api('/produccion/auditoria').then(data => {
-    el.style.display = 'none';
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay registros.'; return; }
+  api(`/produccion/auditoria?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay registros.'; return; }
     document.getElementById('tabla-auditoria').style.display = '';
-    document.getElementById('tbody-auditoria').innerHTML = data.map(r =>
+    document.getElementById('tbody-auditoria').innerHTML = items.map(r =>
       `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td></tr>`
     ).join('');
   });
@@ -650,40 +816,91 @@ function cargarAuditoria() {
 
 // --- USUARIOS ---
 // --- ORDENES ---
-function cargarOrdenes() {
-  const el = document.getElementById('loading-ordenes'); el.style.display = 'block';
+function cargarOrdenes(page, pageSize) {
+  page = page || 1; pageSize = pageSize || 50;
+  const el = document.getElementById('loading-ordenes'); if (el) el.style.display = 'block';
   document.getElementById('tabla-ordenes').style.display = 'none';
-  api('/ordenes').then(data => {
-    el.style.display = 'none';
-    if (!Array.isArray(data) || !data.length) { el.textContent = 'No hay órdenes registradas.'; return; }
+  api(`/ordenes?page=${page}&page_size=${pageSize}`).then(data => {
+    if (el) el.style.display = 'none';
+    const items = data.items || data;
+    if (!items.length) { if (el) el.textContent = 'No hay órdenes registradas.'; return; }
     document.getElementById('tabla-ordenes').style.display = '';
     const esAdmin = USUARIO.rol === 'admin';
     document.getElementById('th-acciones-orden').classList.toggle('hidden', !esAdmin);
-    document.getElementById('tbody-ordenes').innerHTML = data.map(o =>
-      `<tr>
+    function badgeEstado(est) {
+      const cls = est === 'pendiente' ? 'badge warn' : est === 'en_produccion' ? 'badge' : 'badge ok';
+      return `<span class="${cls}" style="font-size:0.75rem">${est === 'en_produccion' ? 'En producción' : est.charAt(0).toUpperCase()+est.slice(1)}</span>`;
+    }
+    const esProduccion = ['admin','produccion'].includes(USUARIO.rol);
+    document.getElementById('tbody-ordenes').innerHTML = items.map(o => {
+      const puedeIniciar = esProduccion && o.estado === 'pendiente';
+      const puedeCompletar = esProduccion && o.estado === 'en_produccion';
+      const puedeEliminar = esAdmin && o.estado === 'pendiente';
+      let acciones = puedeIniciar ? `<button class="btn-sm" onclick="iniciarOrden('${o.id}')" style="font-size:0.75rem">Iniciar</button>` : '';
+      if (puedeCompletar) acciones += `<button class="btn-sm" onclick="completarOrden('${o.id}')" style="font-size:0.75rem">Completar</button>`;
+      if (puedeEliminar) acciones += `<button class="danger btn-sm" onclick="eliminarOrden('${o.id}')" style="font-size:0.75rem">Eliminar</button>`;
+      return `<tr>
         <td style="font-size:0.75rem;font-family:monospace">${o.id.slice(0,8)}…</td>
         <td>${o.id_formula}</td>
         <td>${o.nombre_formula}</td>
         <td>${o.cantidad_kg} kg</td>
+        <td>${badgeEstado(o.estado)}</td>
         <td style="font-size:0.8rem">${o.usuario || '-'}</td>
         <td style="font-size:0.8rem">${o.creado_en ? new Date(o.creado_en).toLocaleString() : '-'}</td>
         <td style="font-size:0.8rem"><a href="#" onclick="verDetalleOrden('${o.id}')">${o.cantidad_componentes || 'Ver'}</a></td>
-        <td>${esAdmin ? `<button class="danger" onclick="eliminarOrden('${o.id}')" style="font-size:0.8rem">Eliminar</button>` : '-'}</td>
-      </tr>`
-    ).join('');
+        <td style="white-space:nowrap">${acciones || '-'}</td>
+      </tr>`;
+    }).join('');
   });
 }
 
 function verDetalleOrden(id) {
-  api(`/ordenes/${id}`).then(o => {
+  Promise.all([
+    api(`/ordenes/${id}`),
+    api(`/ordenes/${id}/controles`),
+    api(`/ordenes/${id}/lotes`),
+  ]).then(([o, controles, lotes]) => {
     if (o.error) { toast(o.error, 'error'); return; }
     const detalles = (o.detalles || []).map(d =>
       `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${d.nota || ''}</td></tr>`
     ).join('');
-    document.getElementById('modal-detalle-orden-body').innerHTML = detalles;
+    const controlesHtml = Array.isArray(controles) && controles.length
+      ? controles.map(c => `<tr><td>${c.tipo}</td><td><span class="badge ${c.resultado === 'aprobado' ? 'ok' : c.resultado === 'rechazado' ? 'fail' : 'warn'}">${c.resultado}</span></td><td style="font-size:0.8rem">${c.observaciones || '-'}</td><td style="font-size:0.8rem">${c.creado_en ? new Date(c.creado_en).toLocaleString() : '-'}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="color:#999;text-align:center">Sin controles registrados</td></tr>';
+    const lotesHtml = Array.isArray(lotes) && lotes.length
+      ? lotes.map(l => `<tr><td><strong>${l.codigo_lote}</strong></td><td>${l.cantidad_producida} kg</td><td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td></tr>`).join('')
+      : '<tr><td colspan="3" style="color:#999;text-align:center">Sin lotes registrados</td></tr>';
+    document.getElementById('modal-detalle-orden-body').innerHTML = `
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:0">Materiales</h3>
+      <table><thead><tr><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead><tbody>${detalles}</tbody></table>
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:1rem">Control de calidad</h3>
+      <div style="margin-bottom:0.5rem"><input type="text" id="modal-nuevo-control-tipo" placeholder="Tipo (viscosidad, densidad, ph…)" style="padding:0.4rem;border:1px solid #ccc;border-radius:3px;margin-right:0.5rem"><button class="btn-sm" onclick="crearControl('${id}')">Agregar control</button></div>
+      <table><thead><tr><th>Tipo</th><th>Resultado</th><th>Observaciones</th><th>Fecha</th></tr></thead><tbody>${controlesHtml}</tbody></table>
+      <h3 style="font-size:0.9rem;color:#1a237e;margin-top:1rem">Lotes</h3>
+      <table><thead><tr><th>Código</th><th>Cantidad</th><th>Estado</th></tr></thead><tbody>${lotesHtml}</tbody></table>`;
     document.getElementById('modal-detalle-orden-title').textContent = `Orden ${id.slice(0,8)}… — ${o.nombre_formula}`;
     document.getElementById('modal-detalle-orden').classList.add('open');
   });
+}
+
+function crearControl(idOrden) {
+  const tipo = document.getElementById('modal-nuevo-control-tipo').value.trim();
+  if (!tipo) { toast('Ingrese un tipo de control', 'error'); return; }
+  const fd = new FormData(); fd.append('tipo', tipo);
+  api(`/ordenes/${idOrden}/controles`, {method:'POST', body: fd}).then(d => {
+    toast(d.mensaje || d.error, d.error ? 'error' : 'success');
+    if (!d.error) verDetalleOrden(idOrden);
+  });
+}
+
+function iniciarOrden(id) {
+  if (!confirm(`Iniciar producción de orden ${id.slice(0,8)}…?`)) return;
+  api(`/ordenes/${id}/iniciar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+}
+
+function completarOrden(id) {
+  if (!confirm(`Completar orden ${id.slice(0,8)}…? Esto consumirá materiales del inventario.`)) return;
+  api(`/ordenes/${id}/completar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
 }
 
 function eliminarOrden(id) {

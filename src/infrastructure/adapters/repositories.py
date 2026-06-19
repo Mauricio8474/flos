@@ -3,9 +3,12 @@
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from src.application.use_cases import RepositorioAuditoria, RepositorioFormula, RepositorioInventario, RepositorioUsuario
+from src.application.use_cases import (
+    RepositorioAuditoria, RepositorioControlCalidad, RepositorioFormula,
+    RepositorioInventario, RepositorioLotes, RepositorioOrdenes, RepositorioUsuario,
+)
 from src.domain.models import ItemInventario
-from src.domain.models import ComponenteFormula, Formula
+from src.domain.models import ComponenteFormula, ControlCalidad, Formula, LoteProduccion
 
 Base = declarative_base()
 
@@ -33,6 +36,7 @@ class InventarioORM(Base):
     nombre = Column(String, default="")
     cantidad_kg = Column(Float, nullable=False, default=0.0)
     costo_unitario = Column(Float, default=0.0)
+    stock_minimo = Column(Float, default=0.0)
 
 
 class OrdenProduccionORM(Base):
@@ -42,7 +46,32 @@ class OrdenProduccionORM(Base):
     id_formula = Column(String, nullable=False)
     nombre_formula = Column(String, nullable=False)
     cantidad_kg = Column(Float, nullable=False)
+    estado = Column(String, nullable=False, default="pendiente")
     usuario = Column(String, default="")
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ControlCalidadORM(Base):
+    __tablename__ = "control_calidad"
+
+    id = Column(String, primary_key=True)
+    id_orden = Column(String, nullable=False, index=True)
+    tipo = Column(String, nullable=False)
+    resultado = Column(String, nullable=False, default="pendiente")
+    observaciones = Column(String, default="")
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class LoteProduccionORM(Base):
+    __tablename__ = "lotes_produccion"
+
+    id = Column(String, primary_key=True)
+    id_orden = Column(String, nullable=False, index=True)
+    id_formula = Column(String, nullable=False)
+    nombre_formula = Column(String, nullable=False)
+    codigo_lote = Column(String, unique=True, nullable=False)
+    cantidad_producida = Column(Float, nullable=False)
+    estado = Column(String, nullable=False, default="activo")
     creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -99,13 +128,22 @@ class PostgresRepositorioFormula(RepositorioFormula):
                 ),
             )
 
-    def listar(self) -> dict[str, Formula]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[dict[str, Formula], int]:
         with self._sf() as session:
-            formulas_orm = {f.id_formula: f for f in session.query(FormulaORM).all()}
+            query = session.query(FormulaORM)
+            total = query.count()
+
+            if page > 0 and page_size > 0:
+                formulas_orm = {f.id_formula: f for f in query.order_by(FormulaORM.id_formula).offset((page - 1) * page_size).limit(page_size).all()}
+            else:
+                formulas_orm = {f.id_formula: f for f in query.all()}
+
             if not formulas_orm:
-                return {}
+                return {}, total
+            ids = list(formulas_orm.keys())
             componentes = (
                 session.query(ComponenteORM)
+                .filter(ComponenteORM.id_formula.in_(ids))
                 .order_by(ComponenteORM.id_formula, ComponenteORM.id)
                 .all()
             )
@@ -117,7 +155,7 @@ class PostgresRepositorioFormula(RepositorioFormula):
                     if c.id_formula == id_formula
                 )
                 resultado[id_formula] = Formula(nombre=f.nombre, componentes=comps)
-            return resultado
+            return resultado, total
 
     def eliminar(self, id_formula: str) -> bool:
         with self._sf() as session:
@@ -201,14 +239,14 @@ class PostgresRepositorioAuditoria(RepositorioAuditoria):
             )
             session.commit()
 
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         with self._sf() as session:
-            rows = (
-                session.query(AuditoriaORM)
-                .order_by(AuditoriaORM.id.desc())
-                .limit(limite)
-                .all()
-            )
+            query = session.query(AuditoriaORM).order_by(AuditoriaORM.id.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             return [
                 {
                     "id": r.id,
@@ -220,7 +258,7 @@ class PostgresRepositorioAuditoria(RepositorioAuditoria):
                     "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                 }
                 for r in rows
-            ]
+            ], total
 
 
 class PostgresRepositorioInventario(RepositorioInventario):
@@ -236,20 +274,80 @@ class PostgresRepositorioInventario(RepositorioInventario):
                         nombre=item.nombre,
                         cantidad_kg=item.cantidad_kg,
                         costo_unitario=item.costo_unitario,
+                        stock_minimo=item.stock_minimo,
                     )
                 )
             session.commit()
 
-    def obtener_todos(self) -> list[ItemInventario]:
+    def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
         with self._sf() as session:
-            rows = session.query(InventarioORM).order_by(InventarioORM.sku).all()
+            query = session.query(InventarioORM).order_by(InventarioORM.sku)
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             return [
-                ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario)
+                ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario, stock_minimo=r.stock_minimo or 0.0)
+                for r in rows
+            ], total
+
+    def obtener(self, sku: str) -> ItemInventario | None:
+        with self._sf() as session:
+            r = session.query(InventarioORM).filter_by(sku=sku).first()
+            if not r:
+                return None
+            return ItemInventario(sku=r.sku, nombre=r.nombre, cantidad_kg=r.cantidad_kg, costo_unitario=r.costo_unitario, stock_minimo=r.stock_minimo or 0.0)
+
+    def actualizar_stock_minimo(self, sku: str, stock_minimo: float) -> bool:
+        with self._sf() as session:
+            r = session.query(InventarioORM).filter_by(sku=sku).first()
+            if not r:
+                return False
+            r.stock_minimo = stock_minimo
+            session.commit()
+            return True
+
+    def obtener_ordenes_con_faltantes(self) -> list[dict]:
+        with self._sf() as session:
+            from sqlalchemy import text
+            rows = session.execute(
+                text("""
+                    SELECT o.id, o.id_formula, o.nombre_formula, o.cantidad_kg
+                    FROM ordenes_produccion o
+                    WHERE o.estado IN ('pendiente', 'en_produccion')
+                    ORDER BY o.creado_en DESC
+                """)
+            ).fetchall()
+            ids = [r[0] for r in rows]
+            if not ids:
+                return []
+            detalles_rows = session.execute(
+                text("""
+                    SELECT d.id_orden, d.sku, d.nombre, d.requerido_kg, d.disponible_kg, d.faltante_kg, d.cubierto, d.nota
+                    FROM detalle_orden d
+                    WHERE d.id_orden = ANY(:ids) AND d.cubierto = 0 AND d.faltante_kg > 0
+                    ORDER BY d.id_orden, d.id
+                """),
+                {"ids": ids},
+            ).fetchall()
+            detalles_por_orden: dict[str, list[dict]] = {}
+            for row in detalles_rows:
+                oid = row[0]
+                if oid not in detalles_por_orden:
+                    detalles_por_orden[oid] = []
+                detalles_por_orden[oid].append({
+                    "sku": row[1], "nombre": row[2], "requerido_kg": float(row[3]),
+                    "disponible_kg": float(row[4]), "faltante_kg": float(row[5]),
+                    "cubierto": bool(row[6]), "nota": row[7],
+                })
+            return [
+                {"id": r[0], "id_formula": r[1], "nombre_formula": r[2], "cantidad_kg": float(r[3]), "detalles": detalles_por_orden.get(r[0], [])}
                 for r in rows
             ]
 
 
-class PostgresRepositorioOrdenes:
+class PostgresRepositorioOrdenes(RepositorioOrdenes):
     def __init__(self, session_factory: sessionmaker) -> None:
         self._sf = session_factory
 
@@ -269,6 +367,7 @@ class PostgresRepositorioOrdenes:
                     id_formula=id_formula,
                     nombre_formula=nombre_formula,
                     cantidad_kg=cantidad_kg,
+                    estado="pendiente",
                     usuario=usuario,
                 )
             )
@@ -287,14 +386,14 @@ class PostgresRepositorioOrdenes:
                 )
             session.commit()
 
-    def listar(self, limite: int = 100) -> list[dict]:
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
         with self._sf() as session:
-            rows = (
-                session.query(OrdenProduccionORM)
-                .order_by(OrdenProduccionORM.creado_en.desc())
-                .limit(limite)
-                .all()
-            )
+            query = session.query(OrdenProduccionORM).order_by(OrdenProduccionORM.creado_en.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
             ids = [r.id for r in rows]
             if ids:
                 from sqlalchemy import text
@@ -313,13 +412,14 @@ class PostgresRepositorioOrdenes:
                     "id_formula": r.id_formula,
                     "nombre_formula": r.nombre_formula,
                     "cantidad_kg": r.cantidad_kg,
+                    "estado": r.estado,
                     "usuario": r.usuario,
                     "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                     "cantidad_componentes": counts.get(r.id, 0),
                     "detalles": [],
                 }
                 for r in rows
-            ]
+            ], total
 
     def obtener(self, id_orden: str) -> dict | None:
         with self._sf() as session:
@@ -337,6 +437,7 @@ class PostgresRepositorioOrdenes:
                 "id_formula": r.id_formula,
                 "nombre_formula": r.nombre_formula,
                 "cantidad_kg": r.cantidad_kg,
+                "estado": r.estado,
                 "usuario": r.usuario,
                 "creado_en": r.creado_en.isoformat() if r.creado_en else None,
                 "detalles": [
@@ -352,6 +453,25 @@ class PostgresRepositorioOrdenes:
                     for d in detalles
                 ],
             }
+
+    def actualizar_estado(self, id_orden: str, nuevo_estado: str) -> bool:
+        with self._sf() as session:
+            r = session.query(OrdenProduccionORM).filter_by(id=id_orden).first()
+            if not r:
+                return False
+            r.estado = nuevo_estado
+            session.commit()
+            return True
+
+    def consumir_inventario_orden(self, id_orden: str) -> None:
+        with self._sf() as session:
+            detalles = session.query(DetalleOrdenORM).filter_by(id_orden=id_orden).all()
+            for d in detalles:
+                inv = session.query(InventarioORM).filter_by(sku=d.sku).first()
+                if inv:
+                    nuevo = max(0.0, inv.cantidad_kg - d.requerido_kg)
+                    inv.cantidad_kg = nuevo
+            session.commit()
 
     def eliminar(self, id_orden: str) -> bool:
         with self._sf() as session:
@@ -419,6 +539,99 @@ class PostgresRepositorioOrdenes:
             }
 
 
+class PostgresRepositorioControlCalidad(RepositorioControlCalidad):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def guardar(self, control: ControlCalidad) -> None:
+        with self._sf() as session:
+            session.add(ControlCalidadORM(
+                id=control.id, id_orden=control.id_orden, tipo=control.tipo,
+                resultado=control.resultado, observaciones=control.observaciones,
+            ))
+            session.commit()
+
+    def listar_por_orden(self, id_orden: str) -> list[dict]:
+        with self._sf() as session:
+            rows = session.query(ControlCalidadORM).filter_by(id_orden=id_orden).order_by(ControlCalidadORM.creado_en.desc()).all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "tipo": r.tipo, "resultado": r.resultado,
+                 "observaciones": r.observaciones, "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ]
+
+    def actualizar_resultado(self, id_control: str, resultado: str, observaciones: str) -> bool:
+        with self._sf() as session:
+            r = session.query(ControlCalidadORM).filter_by(id=id_control).first()
+            if not r:
+                return False
+            r.resultado = resultado
+            if observaciones:
+                r.observaciones = observaciones
+            session.commit()
+            return True
+
+
+class PostgresRepositorioLotes(RepositorioLotes):
+    def __init__(self, session_factory: sessionmaker) -> None:
+        self._sf = session_factory
+
+    def guardar(self, lote: LoteProduccion) -> None:
+        with self._sf() as session:
+            session.add(LoteProduccionORM(
+                id=lote.id, id_orden=lote.id_orden, id_formula=lote.id_formula,
+                nombre_formula=lote.nombre_formula, codigo_lote=lote.codigo_lote,
+                cantidad_producida=lote.cantidad_producida, estado=lote.estado,
+            ))
+            session.commit()
+
+    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+        with self._sf() as session:
+            query = session.query(LoteProduccionORM).order_by(LoteProduccionORM.creado_en.desc())
+            total = query.count()
+            if page > 0 and page_size > 0:
+                rows = query.offset((page - 1) * page_size).limit(page_size).all()
+            else:
+                rows = query.all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                 "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                 "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                 "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ], total
+
+    def obtener(self, id_lote: str) -> dict | None:
+        with self._sf() as session:
+            r = session.query(LoteProduccionORM).filter_by(id=id_lote).first()
+            if not r:
+                return None
+            return {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                    "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                    "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                    "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+
+    def obtener_por_orden(self, id_orden: str) -> list[dict]:
+        with self._sf() as session:
+            rows = session.query(LoteProduccionORM).filter_by(id_orden=id_orden).order_by(LoteProduccionORM.creado_en.desc()).all()
+            return [
+                {"id": r.id, "id_orden": r.id_orden, "id_formula": r.id_formula,
+                 "nombre_formula": r.nombre_formula, "codigo_lote": r.codigo_lote,
+                 "cantidad_producida": r.cantidad_producida, "estado": r.estado,
+                 "creado_en": r.creado_en.isoformat() if r.creado_en else None}
+                for r in rows
+            ]
+
+    def actualizar_estado(self, id_lote: str, estado: str) -> bool:
+        with self._sf() as session:
+            r = session.query(LoteProduccionORM).filter_by(id=id_lote).first()
+            if not r:
+                return False
+            r.estado = estado
+            session.commit()
+            return True
+
+
 def init_db(database_url: str) -> sessionmaker:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
@@ -432,10 +645,52 @@ def init_db(database_url: str) -> sessionmaker:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN nombre VARCHAR DEFAULT ''"))
         if "costo_unitario" not in columns:
             conn.execute(text("ALTER TABLE inventario ADD COLUMN costo_unitario FLOAT DEFAULT 0.0"))
+        if "stock_minimo" not in columns:
+            conn.execute(text("ALTER TABLE inventario ADD COLUMN stock_minimo FLOAT DEFAULT 0.0"))
 
         indexes = {ix["name"] for ix in inspector.get_indexes("componentes_formula")}
         if "ix_componentes_formula_id_formula" not in indexes:
             conn.execute(text("CREATE INDEX ix_componentes_formula_id_formula ON componentes_formula (id_formula)"))
+
+        if "ordenes_produccion" in [t for t in inspector.get_table_names()]:
+            ord_cols = {c["name"] for c in inspector.get_columns("ordenes_produccion")}
+            if "estado" not in ord_cols:
+                conn.execute(text("ALTER TABLE ordenes_produccion ADD COLUMN estado VARCHAR NOT NULL DEFAULT 'pendiente'"))
+
+        # Create control_calidad table if not exists
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS control_calidad (
+                id VARCHAR PRIMARY KEY,
+                id_orden VARCHAR NOT NULL,
+                tipo VARCHAR NOT NULL,
+                resultado VARCHAR NOT NULL DEFAULT 'pendiente',
+                observaciones VARCHAR DEFAULT '',
+                creado_en TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Create lotes_produccion table if not exists
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lotes_produccion (
+                id VARCHAR PRIMARY KEY,
+                id_orden VARCHAR NOT NULL,
+                id_formula VARCHAR NOT NULL,
+                nombre_formula VARCHAR NOT NULL,
+                codigo_lote VARCHAR UNIQUE NOT NULL,
+                cantidad_producida FLOAT NOT NULL,
+                estado VARCHAR NOT NULL DEFAULT 'activo',
+                creado_en TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Add indexes if missing
+        existing_tables = [t for t in inspector.get_table_names()]
+        if "control_calidad" in existing_tables:
+            cc_ix = {ix["name"] for ix in inspector.get_indexes("control_calidad")}
+            if "ix_control_calidad_id_orden" not in cc_ix:
+                conn.execute(text("CREATE INDEX ix_control_calidad_id_orden ON control_calidad (id_orden)"))
+        if "lotes_produccion" in existing_tables:
+            lp_ix = {ix["name"] for ix in inspector.get_indexes("lotes_produccion")}
+            if "ix_lotes_produccion_id_orden" not in lp_ix:
+                conn.execute(text("CREATE INDEX ix_lotes_produccion_id_orden ON lotes_produccion (id_orden)"))
 
         conn.commit()
 

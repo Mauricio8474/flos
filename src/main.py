@@ -1,7 +1,6 @@
 ﻿import io
 import logging
 import os
-import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -26,11 +25,18 @@ from src.infrastructure.auth import (
 
 from src.domain.models import ComponenteFormula, Formula, ItemInventario
 from src.domain.services import CalculadorMRP
+from src.application.use_cases import (
+    CalcularExplosion, CalcularExplosionBatch, CambiarEstadoOrden,
+    CrearControlCalidad, CrearLote, GenerarAlertasStock,
+    GenerarSugerenciasCompra, RegistrarResultadoControl, TrazarLote,
+)
 from src.infrastructure.adapters.excel_reader import ExcelFormulasAdapter, ExcelInventarioAdapter
 from src.infrastructure.adapters.repositories import (
     PostgresRepositorioAuditoria,
+    PostgresRepositorioControlCalidad,
     PostgresRepositorioFormula,
     PostgresRepositorioInventario,
+    PostgresRepositorioLotes,
     PostgresRepositorioOrdenes,
     PostgresRepositorioUsuario,
     init_db,
@@ -108,6 +114,21 @@ def startup():
     app.state.repo_auditoria = PostgresRepositorioAuditoria(sf)
     app.state.repo_usuarios = PostgresRepositorioUsuario(sf)
     app.state.repo_ordenes = PostgresRepositorioOrdenes(sf)
+    app.state.repo_control_calidad = PostgresRepositorioControlCalidad(sf)
+    app.state.repo_lotes = PostgresRepositorioLotes(sf)
+    app.state.caso_calcular_explosion = CalcularExplosion(
+        app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
+    )
+    app.state.caso_calcular_explosion_batch = CalcularExplosionBatch(
+        app.state.repo_formula, app.state.repo_inventario, app.state.repo_ordenes,
+    )
+    app.state.caso_cambiar_estado_orden = CambiarEstadoOrden(app.state.repo_ordenes)
+    app.state.caso_generar_alertas = GenerarAlertasStock(app.state.repo_inventario)
+    app.state.caso_generar_sugerencias = GenerarSugerenciasCompra(app.state.repo_inventario, app.state.repo_ordenes)
+    app.state.caso_crear_control = CrearControlCalidad(app.state.repo_control_calidad)
+    app.state.caso_registrar_resultado = RegistrarResultadoControl(app.state.repo_control_calidad)
+    app.state.caso_crear_lote = CrearLote(app.state.repo_lotes, app.state.repo_ordenes)
+    app.state.caso_trazar_lote = TrazarLote(app.state.repo_lotes, app.state.repo_ordenes)
 
     repo_usu = app.state.repo_usuarios
     if not repo_usu.existe_admin():
@@ -136,6 +157,62 @@ def _repo_usuarios():
 
 def _repo_ordenes():
     return app.state.repo_ordenes
+
+
+def _paginar(items: list | dict, total: int, page: int, page_size: int) -> dict:
+    if page_size <= 0:
+        page_size = total if total > 0 else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+    }
+
+
+def _caso_calcular_explosion():
+    return app.state.caso_calcular_explosion
+
+
+def _caso_calcular_explosion_batch():
+    return app.state.caso_calcular_explosion_batch
+
+
+def _caso_cambiar_estado_orden():
+    return app.state.caso_cambiar_estado_orden
+
+
+def _caso_generar_alertas():
+    return app.state.caso_generar_alertas
+
+
+def _caso_generar_sugerencias():
+    return app.state.caso_generar_sugerencias
+
+
+def _repo_control():
+    return app.state.repo_control_calidad
+
+
+def _repo_lotes():
+    return app.state.repo_lotes
+
+
+def _caso_crear_control():
+    return app.state.caso_crear_control
+
+
+def _caso_registrar_resultado():
+    return app.state.caso_registrar_resultado
+
+
+def _caso_crear_lote():
+    return app.state.caso_crear_lote
+
+
+def _caso_trazar_lote():
+    return app.state.caso_trazar_lote
 
 
 def _auditar(entidad: str, entidad_id: str, accion: str, detalle: str, usuario: str) -> None:
@@ -203,14 +280,18 @@ def eliminar_usuario(username: str) -> dict:
 # Fórmulas
 # ---------------------------------------------------------------------------
 @app.get("/produccion/formulas", dependencies=[Depends(obtener_usuario_actual)])
-def listar_formulas() -> list[dict]:
-    todas = _repo_formula().listar()
-    return [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
+def listar_formulas(page: int = 0, page_size: int = 0) -> dict:
+    todas, total = _repo_formula().listar(page, page_size)
+    items = [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 @app.get("/produccion/formulas/excel", dependencies=[Depends(obtener_usuario_actual)])
 def descargar_formulas_excel() -> StreamingResponse:
-    todas = _repo_formula().listar()
+    todas, _ = _repo_formula().listar()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "formulas"
@@ -330,9 +411,9 @@ def cargar_inventario(
 
 
 @app.get("/produccion/inventario", dependencies=[Depends(obtener_usuario_actual)])
-def obtener_inventario() -> list[dict]:
-    items = _repo_inventario().obtener_todos()
-    return [
+def obtener_inventario(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_inventario().obtener_todos(page, page_size)
+    data = [
         {
             "sku": i.sku,
             "nombre": i.nombre,
@@ -341,68 +422,51 @@ def obtener_inventario() -> list[dict]:
         }
         for i in items
     ]
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(data, total, page, page_size)
+
+
+@app.put("/produccion/inventario/{sku}", dependencies=[Depends(requerir_rol("admin", "ingenieria", "almacen"))])
+def actualizar_stock_minimo(sku: str, stock_minimo: float = Form(...)) -> dict:
+    item = _repo_inventario().obtener(sku)
+    if not item:
+        return {"error": f"SKU '{sku}' no encontrado"}
+    _repo_inventario().actualizar_stock_minimo(sku, stock_minimo)
+    return {"mensaje": f"Stock mínimo de '{sku}' actualizado a {stock_minimo} kg"}
+
+
+# ---------------------------------------------------------------------------
+# Alertas de stock
+# ---------------------------------------------------------------------------
+@app.get("/alertas/stock", dependencies=[Depends(obtener_usuario_actual)])
+def listar_alertas_stock() -> list[dict]:
+    return _caso_generar_alertas().ejecutar()
+
+
+# ---------------------------------------------------------------------------
+# Sugerencias de compra
+# ---------------------------------------------------------------------------
+@app.get("/sugerencias-compra", dependencies=[Depends(obtener_usuario_actual)])
+def listar_sugerencias_compra() -> dict:
+    return {"sugerencias": _caso_generar_sugerencias().ejecutar()}
 
 
 # ---------------------------------------------------------------------------
 # Auditoría
 # ---------------------------------------------------------------------------
 @app.get("/produccion/auditoria", dependencies=[Depends(requerir_rol("admin"))])
-def listar_auditoria(limite: int = 100) -> list[dict]:
-    return _repo_auditoria().listar(limite)
+def listar_auditoria(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_auditoria().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 def _inventario_a_dict(items: list) -> dict[str, ItemInventario]:
     return {i.sku: i for i in items}
-
-
-def _detalles_from_resultados(resultados) -> list[dict]:
-    return [
-        {
-            "sku": r.sku,
-            "nombre": r.nombre,
-            "requerido_kg": r.requerido_kg,
-            "disponible_kg": r.disponible_kg,
-            "faltante_kg": r.faltante_kg,
-            "cubierto": r.cubierto,
-            "nota": r.nota,
-        }
-        for r in resultados
-    ]
-
-
-def _guardar_orden(
-    id_formula: str,
-    nombre_formula: str,
-    cantidad_kg: float,
-    usuario: str,
-    resultados,
-) -> str:
-    orden_id = str(uuid.uuid4())
-    _repo_ordenes().guardar(
-        id_orden=orden_id,
-        id_formula=id_formula,
-        nombre_formula=nombre_formula,
-        cantidad_kg=cantidad_kg,
-        usuario=usuario,
-        detalles=_detalles_from_resultados(resultados),
-    )
-    return orden_id
-
-
-def _resultado_a_dict(r, orden_id="", orden=""):
-    d = {
-        "sku": r.sku,
-        "nombre": r.nombre,
-        "requerido_kg": r.requerido_kg,
-        "disponible_kg": r.disponible_kg,
-        "faltante_kg": r.faltante_kg,
-        "cubierto": r.cubierto,
-        "nota": r.nota,
-        "orden_id": orden_id,
-    }
-    if orden:
-        d["orden"] = orden
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -414,13 +478,12 @@ def calcular_explosion(
     cantidad_a_producir_kg: float = Form(...),
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
-    formula = _repo_formula().obtener(id_formula)
-    if not formula:
-        return [{"error": f"Formula '{id_formula}' no encontrada"}]
-    inventario_dict = _inventario_a_dict(_repo_inventario().obtener_todos())
-    resultados = CalculadorMRP.calcular_explosion(formula, cantidad_a_producir_kg, inventario_dict)
-    orden_id = _guardar_orden(id_formula, formula.nombre, cantidad_a_producir_kg, usuario["sub"], resultados)
-    return [_resultado_a_dict(r, orden_id=orden_id) for r in resultados]
+    resultados, error = _caso_calcular_explosion().ejecutar(
+        id_formula, cantidad_a_producir_kg, usuario["sub"],
+    )
+    if error:
+        return [{"error": error}]
+    return resultados
 
 
 @app.post("/produccion/calcular-explosion/batch", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
@@ -428,19 +491,10 @@ def calcular_explosion_batch(
     ordenes: list[OrdenBatch],
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
-    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
-    repo = _repo_formula()
-    resultados = []
-    for orden in ordenes:
-        formula = repo.obtener(orden.id_formula)
-        if not formula:
-            resultados.append({"orden": orden.id_formula, "error": "Formula no encontrada"})
-            continue
-        res = CalculadorMRP.calcular_explosion(formula, orden.cantidad, inventario)
-        orden_id = _guardar_orden(orden.id_formula, formula.nombre, orden.cantidad, usuario["sub"], res)
-        for r in res:
-            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden.id_formula))
-    return resultados
+    return _caso_calcular_explosion_batch().ejecutar(
+        [{"id_formula": o.id_formula, "cantidad": o.cantidad} for o in ordenes],
+        usuario["sub"],
+    )
 
 
 @app.post("/produccion/calcular-explosion/batch/excel", dependencies=[Depends(requerir_rol("admin", "ingenieria", "produccion"))])
@@ -475,19 +529,7 @@ def calcular_explosion_batch_excel(
             ordenes.append({"id_formula": ref, "cantidad": cant})
     if not ordenes:
         return [{"error": "No se encontraron órdenes válidas en el Excel"}]
-    inventario = _inventario_a_dict(_repo_inventario().obtener_todos())
-    repo = _repo_formula()
-    resultados = []
-    for orden in ordenes:
-        formula = repo.obtener(orden["id_formula"])
-        if not formula:
-            resultados.append({"orden": orden["id_formula"], "error": "Formula no encontrada"})
-            continue
-        res = CalculadorMRP.calcular_explosion(formula, orden["cantidad"], inventario)
-        orden_id = _guardar_orden(orden["id_formula"], formula.nombre, orden["cantidad"], usuario["sub"], res)
-        for r in res:
-            resultados.append(_resultado_a_dict(r, orden_id=orden_id, orden=orden["id_formula"]))
-    return resultados
+    return _caso_calcular_explosion_batch().ejecutar(ordenes, usuario["sub"])
 
 
 def _generar_excel_resultados(resultados, id_formula) -> StreamingResponse:
@@ -540,7 +582,7 @@ def calcular_explosion_excel(id_formula: str = Form(...), cantidad_a_producir_kg
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()[0]))
     return _generar_excel_resultados(resultados, id_formula)
 
 
@@ -549,7 +591,7 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
     formula = _repo_formula().obtener(id_formula)
     if not formula:
         return StreamingResponse(iter([b"Formula no encontrada"]), media_type="text/plain", status_code=404)
-    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()))
+    resultados, _ = _explosion_resultados(formula, cantidad_a_producir_kg, _inventario_a_dict(_repo_inventario().obtener_todos()[0]))
     return _generar_pdf_resultados(resultados, id_formula, cantidad_a_producir_kg)
 
 
@@ -557,8 +599,12 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
 # Órdenes de producción
 # ---------------------------------------------------------------------------
 @app.get("/ordenes", dependencies=[Depends(obtener_usuario_actual)])
-def listar_ordenes(limite: int = 100) -> list[dict]:
-    return _repo_ordenes().listar(limite)
+def listar_ordenes(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_ordenes().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
 
 
 @app.get("/ordenes/{id_orden}", dependencies=[Depends(obtener_usuario_actual)])
@@ -571,9 +617,102 @@ def obtener_orden(id_orden: str) -> dict:
 
 @app.delete("/ordenes/{id_orden}", dependencies=[Depends(requerir_rol("admin"))])
 def eliminar_orden(id_orden: str) -> dict:
+    orden = _repo_ordenes().obtener(id_orden)
+    if not orden:
+        return {"error": f"Orden '{id_orden}' no encontrada"}
+    if orden.get("estado") != "pendiente":
+        return {"error": "Solo se pueden eliminar órdenes en estado 'pendiente'"}
     if _repo_ordenes().eliminar(id_orden):
         return {"mensaje": f"Orden '{id_orden}' eliminada"}
     return {"error": f"Orden '{id_orden}' no encontrada"}
+
+
+@app.post("/ordenes/{id_orden}/iniciar", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def iniciar_orden(id_orden: str, usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_cambiar_estado_orden().ejecutar(id_orden, "en_produccion")
+    if "error" in res:
+        return res
+    _auditar("orden", id_orden, "INICIAR", "Orden pasa a en_produccion", usuario["sub"])
+    return res
+
+
+@app.post("/ordenes/{id_orden}/completar", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def completar_orden(id_orden: str, usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_cambiar_estado_orden().ejecutar(id_orden, "completada")
+    if "error" in res:
+        return res
+    _auditar("orden", id_orden, "COMPLETAR", "Orden completada - inventario consumido", usuario["sub"])
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Control de calidad
+# ---------------------------------------------------------------------------
+@app.get("/ordenes/{id_orden}/controles", dependencies=[Depends(obtener_usuario_actual)])
+def listar_controles_orden(id_orden: str) -> list[dict]:
+    return _repo_control().listar_por_orden(id_orden)
+
+
+@app.post("/ordenes/{id_orden}/controles", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def crear_control_calidad(id_orden: str, tipo: str = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_crear_control().ejecutar(id_orden, tipo)
+    if "error" in res:
+        return res
+    _auditar("control_calidad", res["id"], "CREAR", f"Control '{tipo}' para orden {id_orden[:8]}…", usuario["sub"])
+    return res
+
+
+@app.put("/control-calidad/{id_control}", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def actualizar_resultado_control(id_control: str, resultado: str = Form(...), observaciones: str = Form(""), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_registrar_resultado().ejecutar(id_control, resultado, observaciones)
+    if "error" in res:
+        return res
+    _auditar("control_calidad", id_control, "ACTUALIZAR", f"Resultado: {resultado}", usuario["sub"])
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Lotes / Trazabilidad
+# ---------------------------------------------------------------------------
+@app.get("/lotes", dependencies=[Depends(obtener_usuario_actual)])
+def listar_lotes(page: int = 0, page_size: int = 0) -> dict:
+    items, total = _repo_lotes().listar(page, page_size)
+    if not page:
+        page = 1
+        page_size = total if total > 0 else 1
+    return _paginar(items, total, page, page_size)
+
+
+@app.get("/lotes/{codigo_lote}/trazabilidad", dependencies=[Depends(obtener_usuario_actual)])
+def trazar_lote(codigo_lote: str) -> dict:
+    res = _caso_trazar_lote().ejecutar(codigo_lote)
+    if not res:
+        return {"error": f"Lote '{codigo_lote}' no encontrado"}
+    return res
+
+
+@app.post("/ordenes/{id_orden}/lotes", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def crear_lote(id_orden: str, codigo_lote: str = Form(...), cantidad_producida: float = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    res = _caso_crear_lote().ejecutar(id_orden, codigo_lote, cantidad_producida)
+    if "error" in res:
+        return res
+    _auditar("lote", res["id"], "CREAR", f"Lote '{codigo_lote}' para orden {id_orden[:8]}…", usuario["sub"])
+    return res
+
+
+@app.get("/ordenes/{id_orden}/lotes", dependencies=[Depends(obtener_usuario_actual)])
+def listar_lotes_orden(id_orden: str) -> list[dict]:
+    return _repo_lotes().obtener_por_orden(id_orden)
+
+
+@app.put("/lotes/{id_lote}/estado", dependencies=[Depends(requerir_rol("admin", "produccion"))])
+def actualizar_estado_lote(id_lote: str, estado: str = Form(...), usuario: dict = Depends(obtener_usuario_actual)) -> dict:
+    if estado not in ("activo", "bloqueado", "liberado"):
+        return {"error": "Estado debe ser 'activo', 'bloqueado' o 'liberado'"}
+    if not _repo_lotes().actualizar_estado(id_lote, estado):
+        return {"error": f"Lote '{id_lote}' no encontrado"}
+    _auditar("lote", id_lote, "ACTUALIZAR", f"Estado: {estado}", usuario["sub"])
+    return {"mensaje": f"Lote actualizado a '{estado}'"}
 
 
 # ---------------------------------------------------------------------------

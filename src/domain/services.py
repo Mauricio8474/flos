@@ -1,4 +1,4 @@
-﻿from src.domain.models import ComponenteFormula, Formula, ItemInventario, ResultadoExplosion
+﻿from src.domain.models import AlertaStock, ComponenteFormula, Formula, ItemInventario, ResultadoExplosion, SugerenciaCompra
 
 
 class MaterialNoEncontradoError(KeyError):
@@ -37,6 +37,62 @@ class CalculadorMRP:
                     cubierto=faltante <= 0.0,
                     nota=nota,
                 )
-            )
+                )
 
         return resultados
+
+
+class GeneradorAlertasStock:
+    @staticmethod
+    def generar(inventario: list[ItemInventario]) -> list[AlertaStock]:
+        alertas: list[AlertaStock] = []
+        for item in inventario:
+            if item.stock_minimo > 0 and item.cantidad_kg < item.stock_minimo:
+                alertas.append(AlertaStock(
+                    sku=item.sku,
+                    nombre=item.nombre,
+                    cantidad_kg=item.cantidad_kg,
+                    stock_minimo=item.stock_minimo,
+                    faltante=round(item.stock_minimo - item.cantidad_kg, 3),
+                ))
+        return sorted(alertas, key=lambda a: a.faltante, reverse=True)
+
+
+class GeneradorSugerenciasCompra:
+    @staticmethod
+    def desde_faltantes_ordenes(ordenes_con_faltantes: list[dict], inventario: dict[str, ItemInventario]) -> list[SugerenciaCompra]:
+        sugerencias: dict[str, SugerenciaCompra] = {}
+        for orden in ordenes_con_faltantes:
+            for detalle in orden.get("detalles", []):
+                if not detalle.get("cubierto") and detalle.get("faltante_kg", 0) > 0:
+                    sku = detalle["sku"]
+                    if sku not in sugerencias:
+                        sugerencias[sku] = SugerenciaCompra(
+                            sku=sku,
+                            nombre=detalle.get("nombre", ""),
+                            cantidad_requerida=0.0,
+                            origen="orden_faltante",
+                            id_orden=orden["id"],
+                        )
+                    existing = sugerencias[sku]
+                    sugerencias[sku] = SugerenciaCompra(
+                        sku=existing.sku,
+                        nombre=existing.nombre,
+                        cantidad_requerida=round(existing.cantidad_requerida + detalle["faltante_kg"], 3),
+                        origen=existing.origen,
+                        id_orden=existing.id_orden,
+                    )
+        return sorted(sugerencias.values(), key=lambda s: s.cantidad_requerida, reverse=True)
+
+    @staticmethod
+    def desde_stock_minimo(inventario: list[ItemInventario]) -> list[SugerenciaCompra]:
+        return [
+            SugerenciaCompra(
+                sku=item.sku,
+                nombre=item.nombre,
+                cantidad_requerida=round(item.stock_minimo - item.cantidad_kg, 3),
+                origen="stock_minimo",
+            )
+            for item in inventario
+            if item.stock_minimo > 0 and item.cantidad_kg < item.stock_minimo
+        ]
