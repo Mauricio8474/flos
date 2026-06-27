@@ -57,8 +57,10 @@ Variables requeridas en `.env`: `DATABASE_URL`, `JWT_SECRET`, `POSTGRES_USER`, `
 
 - **Fórmulas** — CRUD completo, carga masiva desde Excel (configurable por columnas)
 - **Inventario** — Carga desde Excel (formato simple o SIIGO), consulta con paginación, stock mínimo configurable
-- **Explosión de materiales** — Cálculo MRP con detección de faltantes; soporta batch JSON y Excel
-- **Órdenes de producción** — Auto-guardado en explosión, máquina de estados (pendiente → en_producción → completada), consumo de inventario al completar
+- **Explosión de materiales** — Cálculo MRP con detección de faltantes; soporta individual, batch JSON y batch Excel
+- **Simulación vs confirmación** — Primero simular para ver disponibilidad de materiales, luego crear órdenes solo si todo está cubierto
+- **Exportación de resultados** — Descarga de resultados en Excel y PDF desde cualquier cálculo (individual o batch)
+- **Órdenes de producción** — Auto-guardado al confirmar, máquina de estados (pendiente → en_producción → completada), consumo de inventario al completar
 - **Alertas de stock** — Materiales por debajo del stock mínimo configurado
 - **Sugerencias de compra** — Combina faltantes de órdenes activas + stock mínimo
 - **Control de calidad** — Controles por tipo (viscosidad, densidad, ph…) vinculados a órdenes
@@ -66,7 +68,7 @@ Variables requeridas en `.env`: `DATABASE_URL`, `JWT_SECRET`, `POSTGRES_USER`, `
 - **Dashboard** — Estadísticas: órdenes por día, productos más demandados, materiales más requeridos
 - **Autenticación JWT** — 5 roles (admin, ingenieria, almacen, produccion, consultor)
 - **Auditoría** — Trazabilidad de cambios en fórmulas, inventario, órdenes, controles y lotes
-- **Reportes** — Descarga de resultados de explosión en Excel y PDF
+- **Reportes** — Descarga de resultados de explosión en Excel y PDF desde los datos mostrados en pantalla
 
 ## Estructura del proyecto
 

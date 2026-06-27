@@ -76,7 +76,7 @@ flos/
 - **Persistencia:** PostgresRepositorioFormula, Inventario, Auditoria, Usuario, Ordenes, ControlCalidad, Lotes
 - **Auth:** JWT con bcrypt/passlib, 5 roles (admin/ingenieria/almacen/produccion/consultor), seed automático de admin
 - **CRUD:** Fórmulas (individual + Excel), inventario (individual + Excel SIIGO), usuarios (admin)
-- **Explosión MRP:** Simple, batch JSON, batch Excel — auto-guarda órdenes, descarga Excel/PDF
+- **Explosión MRP:** Simple, batch JSON, batch Excel — simulación sin guardar + confirmación opcional, descarga Excel/PDF desde resultados en pantalla
 - **Dashboard SPA:** FastAPI static files con tabs, buscadores, estadísticas
 - **Órdenes:** Auto-guardado en explosión, CRUD, estadísticas
 - **Sprint 1 — Refactor:** CalcularExplosion/CalcularExplosionBatch como use cases, RepositorioOrdenes port, paginación
@@ -95,9 +95,9 @@ flos/
 - JWT con 8h de expiración
 - Adaptador de inventario configurable (fila y columnas) para formatos simple/SIIGO
 - SKUs faltantes en explosión: disponible=0 con nota aclaratoria (no error)
-- Auto-guardado de órdenes en toda explosión
+- Auto-guardado de órdenes en toda explosión (solo al confirmar, no al simular)
 - Dashboard SPA servido por FastAPI
-- Máquina de estados orden: solo pendiente → en_produccion → completada
+- Exportación Excel/PDF desde datos en pantalla (no recalcula)
 - Consumo de inventario al completar orden
 - stock_minimo default 0.0 (sin alerta hasta configurar)
 - Control de calidad: tipo libre, resultado pendiente/aprobado/rechazado
