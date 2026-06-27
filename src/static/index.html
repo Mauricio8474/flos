@@ -370,6 +370,7 @@ const BUSCADOR_TIMERS = {};
 
 let ULTIMOS_RESULTADOS = null;
 let RESULTADOS_SIMULACION = false;
+let ULTIMA_SIMULACION = null;
 
 const PAG = {
   formulas: { page: 1, pageSize: 100, total: 0, q: '' },
@@ -746,6 +747,7 @@ function simularExplosion() {
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
   if (!id) { toast('Seleccione una fórmula', 'error'); return; }
+  ULTIMA_SIMULACION = {tipo: 'single', id_formula: id, cantidad: cant};
   const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
   api('/produccion/calcular-explosion/simular', {method:'POST', body:fd}).then(data => {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
@@ -754,16 +756,20 @@ function simularExplosion() {
 }
 
 function crearOrdenDesdeSimulacion() {
-  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION) {
+  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION || !ULTIMA_SIMULACION) {
     toast('Primero ejecute una simulación', 'error'); return;
   }
-  const id = document.getElementById('explosion-formula').value;
-  const cant = document.getElementById('explosion-cantidad').value;
-  const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
+  const {id_formula, cantidad} = ULTIMA_SIMULACION;
+  const fd = new FormData(); fd.append('id_formula', id_formula); fd.append('cantidad_a_producir_kg', cantidad);
   api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
     toast('Orden creada exitosamente', 'success');
-    mostrarResultados(data, false);
+    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
+    document.getElementById('resultado-explosion').style.display = 'none';
+    document.getElementById('btn-crear-orden').style.display = 'none';
+    document.getElementById('btn-crear-batch').style.display = 'none';
+    document.getElementById('btn-res-excel').style.display = 'none';
+    document.getElementById('btn-res-pdf').style.display = 'none';
     cargarOrdenes();
   });
 }
@@ -799,6 +805,7 @@ function simularBatch() {
   try {
     const ordenes = JSON.parse(document.getElementById('batch-input').value);
     if (!Array.isArray(ordenes) || !ordenes.length) throw 'Array vacío';
+    ULTIMA_SIMULACION = {tipo: 'batch', ordenes: ordenes};
     api('/produccion/calcular-explosion/batch/simular', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
       if (!Array.isArray(data)) { toast('Error en batch', 'error'); return; }
       mostrarResultados(data, true);
@@ -807,18 +814,21 @@ function simularBatch() {
 }
 
 function crearOrdenesBatch() {
-  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION) {
+  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION || !ULTIMA_SIMULACION) {
     toast('Primero ejecute una simulación batch', 'error'); return;
   }
-  try {
-    const ordenes = JSON.parse(document.getElementById('batch-input').value);
-    api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
-      if (!Array.isArray(data)) { toast('Error al crear órdenes', 'error'); return; }
-      toast('Órdenes creadas exitosamente', 'success');
-      mostrarResultados(data, false);
-      cargarOrdenes();
-    });
-  } catch(e) { toast('Error', 'error'); }
+  const ordenes = ULTIMA_SIMULACION.ordenes;
+  api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
+    if (!Array.isArray(data)) { toast('Error al crear órdenes', 'error'); return; }
+    toast('Órdenes creadas exitosamente', 'success');
+    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
+    document.getElementById('resultado-explosion').style.display = 'none';
+    document.getElementById('btn-crear-orden').style.display = 'none';
+    document.getElementById('btn-crear-batch').style.display = 'none';
+    document.getElementById('btn-res-excel').style.display = 'none';
+    document.getElementById('btn-res-pdf').style.display = 'none';
+    cargarOrdenes();
+  });
 }
 
 function calcularBatchExcel() {
