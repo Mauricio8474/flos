@@ -194,29 +194,35 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
     <div class="form-row">
       <div class="form-group"><label>Fórmula</label><select id="explosion-formula"></select></div>
       <div class="form-group"><label>Cantidad (kg)</label><input type="number" id="explosion-cantidad" value="100" min="1" step="0.1"></div>
-      <button onclick="calcularExplosion()">Calcular</button>
-      <button class="success" onclick="descargarExcel()">Excel</button>
-      <button class="success" onclick="descargarPDF()">PDF</button>
+      <button onclick="simularExplosion()" id="btn-simular">Simular</button>
+      <button class="success" onclick="crearOrdenDesdeSimulacion()" id="btn-crear-orden" style="display:none">Crear orden</button>
+      <button class="success" onclick="descargarExcelResultados()" id="btn-exp-excel" style="display:none">Excel</button>
+      <button class="success" onclick="descargarPDFResultados()" id="btn-exp-pdf" style="display:none">PDF</button>
     </div>
   </div>
   <div class="card">
     <h2>Explosión batch</h2>
     <div style="margin-bottom:0.5rem"><textarea id="batch-input" rows="4">[{"id_formula": "AMC2705", "cantidad": 100}]</textarea></div>
-    <button onclick="calcularBatch()" style="margin-right:0.5rem">Ejecutar batch (JSON)</button>
+    <button onclick="simularBatch()" style="margin-right:0.5rem">Simular batch (JSON)</button>
     <button class="success" onclick="document.getElementById('batch-excel-file').click()">Cargar desde Excel</button>
+    <button class="success" onclick="crearOrdenesBatch()" id="btn-crear-batch" style="display:none">Crear órdenes</button>
     <input type="file" id="batch-excel-file" accept=".xlsx" style="display:none" onchange="calcularBatchExcel()">
     <div id="batch-excel-config" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f5f5f5;border-radius:6px">
       <div class="form-row">
         <div class="form-group"><label>Columna ID (ref producto)</label><input type="number" id="batch-col-id" value="0" min="0" style="min-width:60px"></div>
         <div class="form-group"><label>Columna Cantidad</label><input type="number" id="batch-col-cant" value="1" min="0" style="min-width:60px"></div>
-        <button onclick="subirBatchExcel()">Ejecutar</button>
+        <button onclick="subirBatchExcelSimular()">Simular</button>
         <button class="danger" onclick="cancelarBatchExcel()">Cancelar</button>
       </div>
     </div>
   </div>
   <div id="resultado-explosion" style="display:none">
-    <div class="card"><h2>Resultados</h2>
-      <input type="search" class="search-bar" id="search-resultados" placeholder="Buscar en resultados…" onkeyup="filtrarTabla('resultados')">
+    <div class="card"><h2>Resultados
+      <span id="resultado-actions" style="float:right;font-size:0.85rem;font-weight:normal">
+        <button class="success btn-sm" onclick="descargarExcelResultados()" id="btn-res-excel" style="display:none">Excel</button>
+        <button class="success btn-sm" onclick="descargarPDFResultados()" id="btn-res-pdf" style="display:none">PDF</button>
+      </span></h2>
+      <input type="search" class="search-bar" id="search-resultados" placeholder="Buscar en resultados…" onkeyup="buscarTabla('resultados')">
       <table><thead><tr><th>Orden</th><th>ID Orden</th><th>SKU</th><th>Nombre</th><th>Requerido</th><th>Disponible</th><th>Faltante</th><th>Estado</th><th>Nota</th></tr></thead>
       <tbody id="tbody-resultados"></tbody></table>
     </div>
@@ -361,6 +367,9 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
 let TOKEN = '';
 let USUARIO = {};
 const BUSCADOR_TIMERS = {};
+
+let ULTIMOS_RESULTADOS = null;
+let RESULTADOS_SIMULACION = false;
 
 const PAG = {
   formulas: { page: 1, pageSize: 100, total: 0, q: '' },
@@ -702,51 +711,122 @@ function subirInventario() {
 }
 
 // --- EXPLOSION ---
-function calcularExplosion() {
+function mostrarResultados(data, esSimulacion) {
+  ULTIMOS_RESULTADOS = data;
+  RESULTADOS_SIMULACION = esSimulacion;
+  document.getElementById('resultado-explosion').style.display = '';
+  const titulo = esSimulacion ? 'SIMULACIÓN' : 'Órdenes creadas';
+  document.getElementById('tbody-resultados').innerHTML = data.map(r =>
+    `<tr><td>${r.orden || '-'}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
+  ).join('');
+  const faltantes = data.filter(r => !r.cubierto && !r.error);
+  const allCubierto = data.length > 0 && faltantes.length === 0 && !data.some(r => r.error);
+  const btnCrear = document.getElementById('btn-crear-orden');
+  const btnCrearBatch = document.getElementById('btn-crear-batch');
+  const btnExcel = document.getElementById('btn-res-excel');
+  const btnPdf = document.getElementById('btn-res-pdf');
+  if (esSimulacion) {
+    btnExcel.style.display = ''; btnPdf.style.display = '';
+    if (data[0] && data[0].orden_id === null && data[0].simulacion) {
+      // Single simulation — show "Crear orden"
+      btnCrear.style.display = ''; btnCrearBatch.style.display = 'none';
+    } else {
+      // Batch simulation — show "Crear órdenes"
+      btnCrear.style.display = 'none'; btnCrearBatch.style.display = '';
+    }
+    btnCrear.disabled = !allCubierto;
+    btnCrearBatch.disabled = !allCubierto;
+  } else {
+    btnCrear.style.display = 'none'; btnCrearBatch.style.display = 'none';
+    btnExcel.style.display = ''; btnPdf.style.display = '';
+  }
+}
+
+function simularExplosion() {
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
   if (!id) { toast('Seleccione una fórmula', 'error'); return; }
   const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
-  api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
+  api('/produccion/calcular-explosion/simular', {method:'POST', body:fd}).then(data => {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
-    document.getElementById('resultado-explosion').style.display = '';
-    document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-      `<tr><td>${r.orden || '-'}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg} kg</td><td>${r.disponible_kg} kg</td><td>${r.faltante_kg} kg</td><td><span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
-    ).join('');
+    mostrarResultados(data, true);
   });
 }
 
-function descargarExcel() {
+function crearOrdenDesdeSimulacion() {
+  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION) {
+    toast('Primero ejecute una simulación', 'error'); return;
+  }
   const id = document.getElementById('explosion-formula').value;
   const cant = document.getElementById('explosion-cantidad').value;
   const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
-  fetch('/produccion/calcular-explosion/excel', {method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd})
-    .then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `explosion_${id}.xlsx`; a.click(); });
-}
-function descargarPDF() {
-  const id = document.getElementById('explosion-formula').value;
-  const cant = document.getElementById('explosion-cantidad').value;
-  const fd = new FormData(); fd.append('id_formula', id); fd.append('cantidad_a_producir_kg', cant);
-  fetch('/produccion/calcular-explosion/pdf', {method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd})
-    .then(r => r.blob()).then(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `explosion_${id}.pdf`; a.click(); });
+  api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
+    if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
+    toast('Orden creada exitosamente', 'success');
+    mostrarResultados(data, false);
+    cargarOrdenes();
+  });
 }
 
-function calcularBatch() {
+function descargarExcelResultados() {
+  if (!ULTIMOS_RESULTADOS) { toast('No hay resultados para exportar', 'error'); return; }
+  const titulo = document.getElementById('explosion-formula').value || 'explosion';
+  fetch('/produccion/exportar/excel', {
+    method:'POST',
+    headers:{'Authorization':`Bearer ${TOKEN}`, 'Content-Type':'application/json'},
+    body: JSON.stringify({resultados: ULTIMOS_RESULTADOS, titulo: `explosion_${titulo}`})
+  }).then(r => r.blob()).then(b => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+    a.download = `explosion_${titulo}.xlsx`; a.click();
+  });
+}
+
+function descargarPDFResultados() {
+  if (!ULTIMOS_RESULTADOS) { toast('No hay resultados para exportar', 'error'); return; }
+  const titulo = document.getElementById('explosion-formula').value || 'explosion';
+  fetch('/produccion/exportar/pdf', {
+    method:'POST',
+    headers:{'Authorization':`Bearer ${TOKEN}`, 'Content-Type':'application/json'},
+    body: JSON.stringify({resultados: ULTIMOS_RESULTADOS, titulo: `explosion_${titulo}`})
+  }).then(r => r.blob()).then(b => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+    a.download = `explosion_${titulo}.pdf`; a.click();
+  });
+}
+
+// --- BATCH ---
+function simularBatch() {
   try {
     const ordenes = JSON.parse(document.getElementById('batch-input').value);
     if (!Array.isArray(ordenes) || !ordenes.length) throw 'Array vacío';
-    api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
+    api('/produccion/calcular-explosion/batch/simular', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
       if (!Array.isArray(data)) { toast('Error en batch', 'error'); return; }
-      mostrarResultadosBatch(data);
+      mostrarResultados(data, true);
     });
   } catch(e) { toast('JSON inválido', 'error'); }
 }
+
+function crearOrdenesBatch() {
+  if (!ULTIMOS_RESULTADOS || !RESULTADOS_SIMULACION) {
+    toast('Primero ejecute una simulación batch', 'error'); return;
+  }
+  try {
+    const ordenes = JSON.parse(document.getElementById('batch-input').value);
+    api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
+      if (!Array.isArray(data)) { toast('Error al crear órdenes', 'error'); return; }
+      toast('Órdenes creadas exitosamente', 'success');
+      mostrarResultados(data, false);
+      cargarOrdenes();
+    });
+  } catch(e) { toast('Error', 'error'); }
+}
+
 function calcularBatchExcel() {
   const file = document.getElementById('batch-excel-file').files[0];
   if (!file) return;
   document.getElementById('batch-excel-config').style.display = 'block';
 }
-function subirBatchExcel() {
+function subirBatchExcelSimular() {
   const file = document.getElementById('batch-excel-file').files[0];
   if (!file) { toast('Seleccione un archivo Excel', 'error'); return; }
   const fd = new FormData(); fd.append('archivo', file);
@@ -754,22 +834,16 @@ function subirBatchExcel() {
   const cantCol = document.getElementById('batch-col-cant').value.trim();
   if (idCol) fd.append('columna_id', idCol);
   if (cantCol) fd.append('columna_cantidad', cantCol);
-  api('/produccion/calcular-explosion/batch/excel', {method:'POST', body: fd}).then(data => {
+  api('/produccion/calcular-explosion/batch/excel/simular', {method:'POST', body: fd}).then(data => {
     if (!Array.isArray(data)) { toast('Error en batch Excel', 'error'); return; }
     document.getElementById('batch-excel-config').style.display = 'none';
     document.getElementById('batch-excel-file').value = '';
-    mostrarResultadosBatch(data);
+    mostrarResultados(data, true);
   });
 }
 function cancelarBatchExcel() {
   document.getElementById('batch-excel-config').style.display = 'none';
   document.getElementById('batch-excel-file').value = '';
-}
-function mostrarResultadosBatch(data) {
-  document.getElementById('resultado-explosion').style.display = '';
-  document.getElementById('tbody-resultados').innerHTML = data.map(r =>
-    `<tr><td>${r.orden}</td><td style="font-size:0.75rem">${r.orden_id || ''}</td><td>${r.sku || '-'}</td><td>${r.nombre || ''}</td><td>${r.requerido_kg || '-'}</td><td>${r.disponible_kg || '-'}</td><td>${r.faltante_kg || '-'}</td><td>${r.error ? `<span class="badge fail">${r.error}</span>` : `<span class="badge ${r.cubierto ? 'ok' : 'fail'}">${r.cubierto ? 'Cubierto' : 'Faltante'}</span>`}</td><td style="font-size:0.8rem;color:#c62828">${r.nota || ''}</td></tr>`
-  ).join('');
 }
 
 // --- ALERTAS ---

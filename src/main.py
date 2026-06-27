@@ -508,6 +508,7 @@ def calcular_explosion_batch_excel(
     archivo: UploadFile = File(...),
     columna_id: int | None = Form(None),
     columna_cantidad: int | None = Form(None),
+    simular: bool = Form(False),
     usuario: dict = Depends(obtener_usuario_actual),
 ) -> list[dict]:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
@@ -535,7 +536,134 @@ def calcular_explosion_batch_excel(
             ordenes.append({"id_formula": ref, "cantidad": cant})
     if not ordenes:
         return [{"error": "No se encontraron órdenes válidas en el Excel"}]
-    return _caso_calcular_explosion_batch().ejecutar(ordenes, usuario["sub"])
+    return _caso_calcular_explosion_batch().ejecutar(ordenes, usuario["sub"], simular)
+
+
+# --- Simulación (sin guardar) ---
+@app.post("/produccion/calcular-explosion/simular", dependencies=[Depends(obtener_usuario_actual)])
+def simular_explosion(
+    id_formula: str = Form(...),
+    cantidad_a_producir_kg: float = Form(...),
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> list[dict]:
+    resultados, error = _caso_calcular_explosion().ejecutar(
+        id_formula, cantidad_a_producir_kg, usuario["sub"], simular=True,
+    )
+    if error:
+        return [{"error": error}]
+    return resultados
+
+
+@app.post("/produccion/calcular-explosion/batch/simular", dependencies=[Depends(obtener_usuario_actual)])
+def simular_explosion_batch(
+    ordenes: list[OrdenBatch],
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> list[dict]:
+    return _caso_calcular_explosion_batch().ejecutar(
+        [{"id_formula": o.id_formula, "cantidad": o.cantidad} for o in ordenes],
+        usuario["sub"], simular=True,
+    )
+
+
+@app.post("/produccion/calcular-explosion/batch/excel/simular", dependencies=[Depends(obtener_usuario_actual)])
+def simular_explosion_batch_excel(
+    archivo: UploadFile = File(...),
+    columna_id: int | None = Form(None),
+    columna_cantidad: int | None = Form(None),
+    usuario: dict = Depends(obtener_usuario_actual),
+) -> list[dict]:
+    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(archivo.file.read())
+        tmp_path = tmp.name
+    wb = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)
+    ws = wb.active
+    filas = list(ws.iter_rows(values_only=True))
+    os.unlink(tmp_path)
+    if not filas:
+        return [{"error": "El archivo Excel no contiene datos"}]
+    encabezados = [str(c).strip() if c is not None else "" for c in filas[0]]
+    idx_id = columna_id if columna_id is not None else 0
+    idx_cant = columna_cantidad if columna_cantidad is not None else 1
+    if idx_id >= len(encabezados) or idx_cant >= len(encabezados):
+        return [{"error": f"Índices de columna fuera de rango. El archivo tiene {len(encabezados)} columnas"}]
+    ordenes = []
+    for fila in filas[1:]:
+        ref = str(fila[idx_id]).strip() if fila[idx_id] is not None else ""
+        try:
+            cant = float(fila[idx_cant]) if fila[idx_cant] is not None else 0.0
+        except (ValueError, TypeError):
+            cant = 0.0
+        if ref and cant > 0:
+            ordenes.append({"id_formula": ref, "cantidad": cant})
+    if not ordenes:
+        return [{"error": "No se encontraron órdenes válidas en el Excel"}]
+    return _caso_calcular_explosion_batch().ejecutar(ordenes, usuario["sub"], simular=True)
+
+
+# --- Exportar resultados (Excel / PDF) ---
+class ResultadoExportar(BaseModel):
+    sku: str = ""
+    nombre: str = ""
+    requerido_kg: float = 0
+    disponible_kg: float = 0
+    faltante_kg: float = 0
+    cubierto: bool = False
+    nota: str = ""
+
+
+class ExportarInput(BaseModel):
+    resultados: list[ResultadoExportar]
+    titulo: str = "Explosion de Materiales"
+
+
+@app.post("/produccion/exportar/excel", dependencies=[Depends(obtener_usuario_actual)])
+def exportar_resultados_excel(body: ExportarInput) -> StreamingResponse:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Explosion"
+    ws.append(["SKU", "Nombre", "Requerido_KG", "Disponible_KG", "Faltante_KG", "Cubierto", "Nota"])
+    for r in body.resultados:
+        ws.append([r.sku, r.nombre, r.requerido_kg, r.disponible_kg, r.faltante_kg, "Si" if r.cubierto else "No", r.nota])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={body.titulo}.xlsx"},
+    )
+
+
+@app.post("/produccion/exportar/pdf", dependencies=[Depends(obtener_usuario_actual)])
+def exportar_resultados_pdf(body: ExportarInput) -> StreamingResponse:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4)
+    estilos = getSampleStyleSheet()
+    elementos = [
+        Paragraph(body.titulo, estilos["Title"]),
+        Paragraph("<br/>", estilos["Normal"]),
+    ]
+    data = [["SKU", "Nombre", "Requerido (kg)", "Disponible (kg)", "Faltante (kg)", "Cubierto", "Nota"]]
+    for r in body.resultados:
+        data.append([r.sku, r.nombre, str(r.requerido_kg), str(r.disponible_kg), str(r.faltante_kg), "Si" if r.cubierto else "No", r.nota])
+    tabla = Table(data)
+    tabla.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#DCE6F1")]),
+    ]))
+    elementos.append(tabla)
+    doc.build(elementos)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={body.titulo}.pdf"},
+    )
 
 
 def _generar_excel_resultados(resultados, id_formula) -> StreamingResponse:

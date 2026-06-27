@@ -190,6 +190,7 @@ class CalcularExplosion:
         id_formula: str,
         cantidad_kg: float,
         usuario: str,
+        simular: bool = False,
     ) -> tuple[list[dict], str | None]:
         formula = self._repo_formula.obtener(id_formula)
         if not formula:
@@ -199,14 +200,15 @@ class CalcularExplosion:
         resultados = CalculadorMRP.calcular_explosion(formula, cantidad_kg, inventario)
 
         orden_id = str(uuid.uuid4())
-        self._repo_ordenes.guardar(
-            id_orden=orden_id,
-            id_formula=id_formula,
-            nombre_formula=formula.nombre,
-            cantidad_kg=cantidad_kg,
-            usuario=usuario,
-            detalles=_detalles_from_resultados(resultados),
-        )
+        if not simular:
+            self._repo_ordenes.guardar(
+                id_orden=orden_id,
+                id_formula=id_formula,
+                nombre_formula=formula.nombre,
+                cantidad_kg=cantidad_kg,
+                usuario=usuario,
+                detalles=_detalles_from_resultados(resultados),
+            )
 
         return [
             {
@@ -217,7 +219,8 @@ class CalcularExplosion:
                 "faltante_kg": r.faltante_kg,
                 "cubierto": r.cubierto,
                 "nota": r.nota,
-                "orden_id": orden_id,
+                "orden_id": orden_id if not simular else None,
+                "simulacion": simular,
             }
             for r in resultados
         ], None
@@ -238,6 +241,7 @@ class CalcularExplosionBatch:
         self,
         ordenes: list[dict],
         usuario: str,
+        simular: bool = False,
     ) -> list[dict]:
         inventario = {i.sku: i for i in self._repo_inventario.obtener_todos()[0]}
         resultados = []
@@ -251,15 +255,16 @@ class CalcularExplosionBatch:
                 continue
 
             res = CalculadorMRP.calcular_explosion(formula, cantidad, inventario)
-            orden_id = str(uuid.uuid4())
-            self._repo_ordenes.guardar(
-                id_orden=orden_id,
-                id_formula=id_formula,
-                nombre_formula=formula.nombre,
-                cantidad_kg=cantidad,
-                usuario=usuario,
-                detalles=_detalles_from_resultados(res),
-            )
+            orden_id = str(uuid.uuid4()) if not simular else None
+            if not simular:
+                self._repo_ordenes.guardar(
+                    id_orden=orden_id,
+                    id_formula=id_formula,
+                    nombre_formula=formula.nombre,
+                    cantidad_kg=cantidad,
+                    usuario=usuario,
+                    detalles=_detalles_from_resultados(res),
+                )
 
             for r in res:
                 resultados.append(
@@ -273,6 +278,7 @@ class CalcularExplosionBatch:
                         "faltante_kg": r.faltante_kg,
                         "cubierto": r.cubierto,
                         "nota": r.nota,
+                        "simulacion": simular,
                     }
                 )
 
