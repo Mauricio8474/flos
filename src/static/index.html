@@ -772,7 +772,12 @@ function crearOrdenDesdeSimulacion() {
   api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
     toast('Orden creada exitosamente', 'success');
-    mostrarResultados(data, false);
+    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
+    document.getElementById('resultado-explosion').style.display = 'none';
+    document.getElementById('btn-crear-orden').style.display = 'none';
+    document.getElementById('btn-crear-batch').style.display = 'none';
+    document.getElementById('btn-res-excel').style.display = 'none';
+    document.getElementById('btn-res-pdf').style.display = 'none';
     PAG.ordenes.page = 1; cargarOrdenes();
   });
 }
@@ -824,7 +829,12 @@ function crearOrdenesBatch() {
   api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
     if (!Array.isArray(data)) { toast('Error al crear órdenes', 'error'); return; }
     toast('Órdenes creadas exitosamente', 'success');
-    mostrarResultados(data, false);
+    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
+    document.getElementById('resultado-explosion').style.display = 'none';
+    document.getElementById('btn-crear-orden').style.display = 'none';
+    document.getElementById('btn-crear-batch').style.display = 'none';
+    document.getElementById('btn-res-excel').style.display = 'none';
+    document.getElementById('btn-res-pdf').style.display = 'none';
     PAG.ordenes.page = 1; cargarOrdenes();
   });
 }
