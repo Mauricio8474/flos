@@ -383,7 +383,15 @@ const PAG = {
 
 function toast(msg, type='info') {
   const t = document.getElementById('toast'); t.textContent = msg;
-  t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 3000);
+  t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function formatearFecha(isoStr) {
+  if (!isoStr) return '-';
+  try {
+    const s = isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z';
+    return new Date(s).toLocaleString('es-CO', {timeZone: 'America/Bogota'});
+  } catch(e) { return isoStr; }
 }
 
 function api(path, opts={}) {
@@ -764,13 +772,8 @@ function crearOrdenDesdeSimulacion() {
   api('/produccion/calcular-explosion', {method:'POST', body:fd}).then(data => {
     if (!Array.isArray(data) || data[0]?.error) { toast(data[0]?.error || 'Error', 'error'); return; }
     toast('Orden creada exitosamente', 'success');
-    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
-    document.getElementById('resultado-explosion').style.display = 'none';
-    document.getElementById('btn-crear-orden').style.display = 'none';
-    document.getElementById('btn-crear-batch').style.display = 'none';
-    document.getElementById('btn-res-excel').style.display = 'none';
-    document.getElementById('btn-res-pdf').style.display = 'none';
-    cargarOrdenes();
+    mostrarResultados(data, false);
+    PAG.ordenes.page = 1; cargarOrdenes();
   });
 }
 
@@ -821,13 +824,8 @@ function crearOrdenesBatch() {
   api('/produccion/calcular-explosion/batch', {method:'POST', body: JSON.stringify(ordenes)}).then(data => {
     if (!Array.isArray(data)) { toast('Error al crear órdenes', 'error'); return; }
     toast('Órdenes creadas exitosamente', 'success');
-    ULTIMOS_RESULTADOS = null; RESULTADOS_SIMULACION = false; ULTIMA_SIMULACION = null;
-    document.getElementById('resultado-explosion').style.display = 'none';
-    document.getElementById('btn-crear-orden').style.display = 'none';
-    document.getElementById('btn-crear-batch').style.display = 'none';
-    document.getElementById('btn-res-excel').style.display = 'none';
-    document.getElementById('btn-res-pdf').style.display = 'none';
-    cargarOrdenes();
+    mostrarResultados(data, false);
+    PAG.ordenes.page = 1; cargarOrdenes();
   });
 }
 
@@ -905,7 +903,7 @@ function cargarLotes() {
         <td>${l.nombre_formula}</td>
         <td>${l.cantidad_producida} kg</td>
         <td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td>
-        <td style="font-size:0.8rem">${l.creado_en ? new Date(l.creado_en).toLocaleString() : '-'}</td>
+        <td style="font-size:0.8rem">${formatearFecha(l.creado_en)}</td>
         <td style="white-space:nowrap">
           ${l.estado !== 'liberado' ? `<button class="btn-sm success" onclick="cambiarEstadoLote('${l.id}','liberado')">Liberar</button>` : ''}
           ${l.estado !== 'bloqueado' ? `<button class="btn-sm danger" onclick="cambiarEstadoLote('${l.id}','bloqueado')">Bloquear</button>` : ''}
@@ -952,7 +950,7 @@ function cargarAuditoria() {
     if (!items.length) { if (el) el.textContent = 'No hay registros.'; document.getElementById('pag-auditoria').innerHTML = ''; return; }
     document.getElementById('tabla-auditoria').style.display = '';
     document.getElementById('tbody-auditoria').innerHTML = items.map(r =>
-      `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td></tr>`
+      `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? formatearFecha(r.creado_en) : '-'}</td></tr>`
     ).join('');
     renderPagination('auditoria');
   });
@@ -991,7 +989,7 @@ function cargarOrdenes() {
         <td>${o.cantidad_kg} kg</td>
         <td>${badgeEstado(o.estado)}</td>
         <td style="font-size:0.8rem">${o.usuario || '-'}</td>
-        <td style="font-size:0.8rem">${o.creado_en ? new Date(o.creado_en).toLocaleString() : '-'}</td>
+        <td style="font-size:0.8rem">${o.creado_en ? formatearFecha(o.creado_en) : '-'}</td>
         <td style="font-size:0.8rem"><a href="#" onclick="verDetalleOrden('${o.id}')">${o.cantidad_componentes || 'Ver'}</a></td>
       <td style="white-space:nowrap">${acciones || '-'}</td>
     </tr>`;
@@ -1011,7 +1009,7 @@ function verDetalleOrden(id) {
       `<tr><td>${d.sku}</td><td>${d.nombre}</td><td>${d.requerido_kg} kg</td><td>${d.disponible_kg} kg</td><td>${d.faltante_kg} kg</td><td><span class="badge ${d.cubierto ? 'ok' : 'fail'}">${d.cubierto ? 'Cubierto' : 'Faltante'}</span></td><td style="font-size:0.8rem;color:#c62828">${d.nota || ''}</td></tr>`
     ).join('');
     const controlesHtml = Array.isArray(controles) && controles.length
-      ? controles.map(c => `<tr><td>${c.tipo}</td><td><span class="badge ${c.resultado === 'aprobado' ? 'ok' : c.resultado === 'rechazado' ? 'fail' : 'warn'}">${c.resultado}</span></td><td style="font-size:0.8rem">${c.observaciones || '-'}</td><td style="font-size:0.8rem">${c.creado_en ? new Date(c.creado_en).toLocaleString() : '-'}</td></tr>`).join('')
+      ? controles.map(c => `<tr><td>${c.tipo}</td><td><span class="badge ${c.resultado === 'aprobado' ? 'ok' : c.resultado === 'rechazado' ? 'fail' : 'warn'}">${c.resultado}</span></td><td style="font-size:0.8rem">${c.observaciones || '-'}</td><td style="font-size:0.8rem">${c.creado_en ? formatearFecha(c.creado_en) : '-'}</td></tr>`).join('')
       : '<tr><td colspan="4" style="color:#999;text-align:center">Sin controles registrados</td></tr>';
     const lotesHtml = Array.isArray(lotes) && lotes.length
       ? lotes.map(l => `<tr><td><strong>${l.codigo_lote}</strong></td><td>${l.cantidad_producida} kg</td><td><span class="badge ${l.estado === 'liberado' ? 'ok' : l.estado === 'bloqueado' ? 'fail' : 'warn'}">${l.estado}</span></td></tr>`).join('')
@@ -1060,7 +1058,7 @@ function cargarUsuarios() {
     if (!Array.isArray(data)) return;
     s.total = data.length;
     document.getElementById('tbody-usuarios').innerHTML = data.map(u =>
-      `<tr><td>${u.username}</td><td>${u.nombre}</td><td><span class="rol-badge" style="background:#e8eaf6;color:#1a237e;text-transform:uppercase">${u.rol}</span></td><td>${u.activo ? '✅' : '❌'}</td><td style="font-size:0.8rem">${u.creado_en ? new Date(u.creado_en).toLocaleDateString() : '-'}</td>` +
+      `<tr><td>${u.username}</td><td>${u.nombre}</td><td><span class="rol-badge" style="background:#e8eaf6;color:#1a237e;text-transform:uppercase">${u.rol}</span></td><td>${u.activo ? '✅' : '❌'}</td><td style="font-size:0.8rem">${u.creado_en ? formatearFecha(u.creado_en) : '-'}</td>` +
       `<td style="display:flex;gap:0.3rem">${u.username !== 'admin' ? `<button class="danger" onclick="eliminarUsuario('${u.username}')" style="font-size:0.8rem">Desactivar</button>` : ''}</td></tr>`
     ).join('');
     renderPagination('usuarios');
