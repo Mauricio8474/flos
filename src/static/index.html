@@ -70,6 +70,13 @@ input[type="file"] { padding: 0.4rem; }
 .btn-sm.danger:hover { background: #e53935; }
 .badge.warn { background: #fff3e0; color: #e65100; }
 textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; width: 100%; }
+.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; font-size: 0.85rem; color: #666; }
+.pagination .info { font-size: 0.8rem; }
+.pagination .pages { display: flex; gap: 0.25rem; align-items: center; }
+.pagination button { background: #e8eaf6; color: #1a237e; border: 1px solid #c5cae9; padding: 0.3rem 0.7rem; border-radius: 3px; cursor: pointer; font-size: 0.8rem; }
+.pagination button:hover:not(:disabled) { background: #c5cae9; }
+.pagination button:disabled { opacity: 0.4; cursor: default; }
+.pagination button.active { background: #1a237e; color: #fff; border-color: #1a237e; }
 </style>
 </head>
 <body>
@@ -146,11 +153,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
       </div>
     </div>
     <div id="loading-formulas" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
-    <input type="search" class="search-bar" id="search-formulas" placeholder="Buscar fórmula…" onkeyup="filtrarTabla('formulas')">
+    <input type="search" class="search-bar" id="search-formulas" placeholder="Buscar fórmula…" onkeyup="buscarTabla('formulas')">
     <table id="tabla-formulas" style="display:none">
       <thead><tr><th>ID</th><th>Nombre</th><th>Componentes</th><th id="th-acciones">Acciones</th></tr></thead>
       <tbody id="tbody-formulas"></tbody>
     </table>
+    <div class="pagination" id="pag-formulas"></div>
   </div>
 </section>
 
@@ -171,11 +179,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <div class="card">
     <h2>Inventario actual</h2>
     <div id="loading-inventario" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
-    <input type="search" class="search-bar" id="search-inventario" placeholder="Buscar en inventario…" onkeyup="filtrarTabla('inventario')">
+    <input type="search" class="search-bar" id="search-inventario" placeholder="Buscar en inventario…" onkeyup="buscarTabla('inventario')">
     <table id="tabla-inventario" style="display:none">
       <thead><tr><th>SKU</th><th>Nombre</th><th>Cantidad (kg)</th><th>Stock mínimo</th><th>Costo Unitario</th></tr></thead>
       <tbody id="tbody-inventario"></tbody>
     </table>
+    <div class="pagination" id="pag-inventario"></div>
   </div>
 </section>
 
@@ -218,11 +227,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <div class="card">
     <h2>Órdenes de producción</h2>
     <div id="loading-ordenes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
-    <input type="search" class="search-bar" id="search-ordenes" placeholder="Buscar orden…" onkeyup="filtrarTabla('ordenes')">
+    <input type="search" class="search-bar" id="search-ordenes" placeholder="Buscar orden…" onkeyup="buscarTabla('ordenes')">
     <table id="tabla-ordenes" style="display:none">
       <thead><tr><th>ID Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad (kg)</th><th>Estado</th><th>Usuario</th><th>Fecha</th><th>Detalle</th><th id="th-acciones-orden">Acciones</th></tr></thead>
       <tbody id="tbody-ordenes"></tbody>
     </table>
+    <div class="pagination" id="pag-ordenes"></div>
   </div>
 </section>
 
@@ -261,11 +271,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
       </div>
     </div>
     <div id="loading-lotes" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
-    <input type="search" class="search-bar" id="search-lotes" placeholder="Buscar lote…" onkeyup="filtrarTabla('lotes')">
+    <input type="search" class="search-bar" id="search-lotes" placeholder="Buscar lote…" onkeyup="buscarTabla('lotes')">
     <table id="tabla-lotes" style="display:none">
       <thead><tr><th>Código lote</th><th>Orden</th><th>Fórmula</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
       <tbody id="tbody-lotes"></tbody>
     </table>
+    <div class="pagination" id="pag-lotes"></div>
   </div>
   <div id="resultado-trazabilidad" style="display:none" class="card">
     <h2>Trazabilidad</h2>
@@ -276,11 +287,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
 <section id="tab-auditoria">
   <div class="card"><h2>Auditoría</h2>
     <div id="loading-auditoria" style="text-align:center;padding:2rem;color:#999">Cargando...</div>
-    <input type="search" class="search-bar" id="search-auditoria" placeholder="Buscar en auditoría…" onkeyup="filtrarTabla('auditoria')">
+    <input type="search" class="search-bar" id="search-auditoria" placeholder="Buscar en auditoría…" onkeyup="buscarTabla('auditoria')">
     <table id="tabla-auditoria" style="display:none">
       <thead><tr><th>ID</th><th>Entidad</th><th>Acción</th><th>Detalle</th><th>Usuario</th><th>Fecha</th></tr></thead>
       <tbody id="tbody-auditoria"></tbody>
     </table>
+    <div class="pagination" id="pag-auditoria"></div>
   </div>
 </section>
 
@@ -288,11 +300,12 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
   <div class="card">
     <h2>Usuarios</h2>
     <button onclick="abrirModalUsuario()" style="margin-bottom:1rem">+ Nuevo usuario</button>
-    <input type="search" class="search-bar" id="search-usuarios" placeholder="Buscar usuario…" onkeyup="filtrarTabla('usuarios')">
-    <table>
+    <input type="search" class="search-bar" id="search-usuarios" placeholder="Buscar usuario…" onkeyup="buscarTabla('usuarios')">
+    <table id="tabla-usuarios">
       <thead><tr><th>Username</th><th>Nombre</th><th>Rol</th><th>Activo</th><th>Creado</th><th>Acciones</th></tr></thead>
       <tbody id="tbody-usuarios"></tbody>
     </table>
+    <div class="pagination" id="pag-usuarios"></div>
   </div>
 </section>
 
@@ -347,6 +360,16 @@ textarea { padding: 0.5rem; font-family: monospace; font-size: 0.85rem; border: 
 <script>
 let TOKEN = '';
 let USUARIO = {};
+const BUSCADOR_TIMERS = {};
+
+const PAG = {
+  formulas: { page: 1, pageSize: 100, total: 0, q: '' },
+  inventario: { page: 1, pageSize: 100, total: 0, q: '' },
+  ordenes: { page: 1, pageSize: 50, total: 0, q: '' },
+  lotes: { page: 1, pageSize: 50, total: 0, q: '' },
+  auditoria: { page: 1, pageSize: 50, total: 0, q: '' },
+  usuarios: { page: 1, pageSize: 50, total: 0, q: '' },
+};
 
 function toast(msg, type='info') {
   const t = document.getElementById('toast'); t.textContent = msg;
@@ -409,7 +432,8 @@ function showTab(name) {
   document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
   document.querySelector(`nav button[onclick*="'${name}'"]`)?.classList.add('active');
   document.getElementById(`tab-${name}`)?.classList.add('active');
-  // Clear search bar
+  // Reset search + pagination
+  if (PAG[name]) { PAG[name].q = ''; PAG[name].page = 1; }
   const sb = document.getElementById(`search-${name}`);
   if (sb) { sb.value = ''; }
   if (name === 'formulas') cargarFormulas();
@@ -468,28 +492,57 @@ function cargarDashboard() {
   });
 }
 
-// --- BUSCADOR ---
-function filtrarTabla(tabla) {
-  const input = document.getElementById(`search-${tabla}`);
-  const q = (input.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const tbody = document.getElementById(`tbody-${tabla}`);
-  if (!tbody) return;
-  Array.from(tbody.rows).forEach(row => {
-    const texto = Array.from(row.cells).map(c => (c.textContent || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')).join(' ');
-    row.style.display = texto.includes(q) ? '' : 'none';
-  });
+// --- BUSCADOR (server-side) ---
+function buscarTabla(tabla) {
+  clearTimeout(BUSCADOR_TIMERS[tabla]);
+  BUSCADOR_TIMERS[tabla] = setTimeout(() => {
+    const input = document.getElementById(`search-${tabla}`);
+    PAG[tabla].q = (input.value || '').trim();
+    PAG[tabla].page = 1;
+    const fn = `cargar${tabla.charAt(0).toUpperCase()}${tabla.slice(1)}`;
+    if (window[fn]) window[fn]();
+  }, 300);
+}
+
+function renderPagination(tabla) {
+  const s = PAG[tabla];
+  const totalPages = Math.max(1, Math.ceil(s.total / s.pageSize));
+  const el = document.getElementById(`pag-${tabla}`);
+  if (!el) return;
+  if (totalPages <= 1 && !s.q) { el.innerHTML = ''; return; }
+  const from = (s.page - 1) * s.pageSize + 1;
+  const to = Math.min(s.page * s.pageSize, s.total);
+  let html = `<span class="info">${from}–${to} de ${s.total}</span><div class="pages">`;
+  html += `<button ${s.page <= 1 ? 'disabled' : ''} onclick="irPagina('${tabla}', ${s.page - 1})">‹ Anterior</button>`;
+  const startPage = Math.max(1, s.page - 2);
+  const endPage = Math.min(totalPages, s.page + 2);
+  if (startPage > 1) html += `<button onclick="irPagina('${tabla}', 1)">1</button>${startPage > 2 ? '<span style="padding:0 0.3rem">…</span>' : ''}`;
+  for (let p = startPage; p <= endPage; p++) {
+    html += `<button class="${p === s.page ? 'active' : ''}" onclick="irPagina('${tabla}', ${p})">${p}</button>`;
+  }
+  if (endPage < totalPages) html += `${endPage < totalPages - 1 ? '<span style="padding:0 0.3rem">…</span>' : ''}<button onclick="irPagina('${tabla}', ${totalPages})">${totalPages}</button>`;
+  html += `<button ${s.page >= totalPages ? 'disabled' : ''} onclick="irPagina('${tabla}', ${s.page + 1})">Siguiente ›</button></div>`;
+  el.innerHTML = html;
+}
+
+function irPagina(tabla, page) {
+  if (page < 1) return;
+  PAG[tabla].page = page;
+  const fn = `cargar${tabla.charAt(0).toUpperCase()}${tabla.slice(1)}`;
+  if (window[fn]) window[fn]();
 }
 
 // --- FORMULAS ---
-function cargarFormulas(page, pageSize) {
-  page = page || 1; pageSize = pageSize || 100;
+function cargarFormulas() {
+  const s = PAG.formulas;
   const el = document.getElementById('loading-formulas'); if (el) el.style.display = 'block';
   document.getElementById('tabla-formulas').style.display = 'none';
-  api(`/produccion/formulas?page=${page}&page_size=${pageSize}`).then(data => {
+  api(`/produccion/formulas?page=${s.page}&page_size=${s.pageSize}${s.q ? `&q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (el) el.style.display = 'none';
     if (data.error) { if (el) el.textContent = 'Error al cargar fórmulas'; return; }
     const items = data.items || data;
-    if (!items.length) { if (el) el.textContent = 'No hay fórmulas registradas.'; return; }
+    s.total = data.total || items.length;
+    if (!items.length) { if (el) el.textContent = 'No hay fórmulas registradas.'; document.getElementById('pag-formulas').innerHTML = ''; return; }
     document.getElementById('tabla-formulas').style.display = '';
     const puedeEditar = ['admin','ingenieria'].includes(USUARIO.rol);
     document.getElementById('tbody-formulas').innerHTML = items.map(f =>
@@ -497,6 +550,7 @@ function cargarFormulas(page, pageSize) {
       (puedeEditar ? `<td style="display:flex;gap:0.3rem"><button onclick="editarFormula('${f.id}')" style="font-size:0.8rem">Editar</button><button class="danger" onclick="eliminarFormula('${f.id}')" style="font-size:0.8rem">Eliminar</button></td>` : '<td>-</td>') +
       `</tr>`
     ).join('');
+    renderPagination('formulas');
   });
 }
 
@@ -545,12 +599,12 @@ function guardarFormula() {
   const editId = document.getElementById('formula-edit-id').value;
   (editId ? api(`/produccion/formulas/${editId}`, {method:'PUT', body: JSON.stringify({id, nombre, componentes: comps})})
           : api('/produccion/formulas', {method:'POST', body: JSON.stringify({id, nombre, componentes: comps})}))
-    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-formula'); cargarFormulas(); cargarSelectorFormulas(); });
+    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-formula'); PAG.formulas.page = 1; cargarFormulas(); cargarSelectorFormulas(); });
 }
 
 function eliminarFormula(id) {
   if (!confirm(`Eliminar fórmula ${id}?`)) return;
-  api(`/produccion/formulas/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarFormulas(); cargarSelectorFormulas(); });
+  api(`/produccion/formulas/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.formulas.page = 1; cargarFormulas(); cargarSelectorFormulas(); });
 }
 
 function cargarFormulasExcel() {
@@ -575,6 +629,7 @@ function subirFormulas() {
     toast(d.mensaje || d.error, d.error ? 'error' : 'success');
     document.getElementById('formula-upload-config').style.display = 'none';
     document.getElementById('formula-file').value = '';
+    PAG.formulas.page = 1; PAG.formulas.q = ''; document.getElementById('search-formulas').value = '';
     cargarFormulas(); cargarSelectorFormulas();
   });
 }
@@ -592,17 +647,17 @@ function descargarFormulas() {
 }
 
 // --- INVENTARIO ---
-function cargarInventario(page, pageSize) {
-  page = page || 1; pageSize = pageSize || 100;
+function cargarInventario() {
+  const s = PAG.inventario;
   const el = document.getElementById('loading-inventario'); if (el) el.style.display = 'block';
   document.getElementById('tabla-inventario').style.display = 'none';
-  api(`/produccion/inventario?page=${page}&page_size=${pageSize}`).then(data => {
+  api(`/produccion/inventario?page=${s.page}&page_size=${s.pageSize}${s.q ? `&q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (el) el.style.display = 'none';
     if (data.error) { if (el) el.textContent = 'Error al cargar inventario'; return; }
     const items = data.items || data;
-    if (!items.length) { if (el) el.textContent = 'Inventario vacío.'; return; }
+    s.total = data.total || items.length;
+    if (!items.length) { if (el) el.textContent = 'Inventario vacío.'; document.getElementById('pag-inventario').innerHTML = ''; return; }
     document.getElementById('tabla-inventario').style.display = '';
-    items.sort((a,b) => a.sku.localeCompare(b.sku));
     const puedeEditarInv = ['admin','ingenieria','almacen'].includes(USUARIO.rol);
     document.getElementById('tbody-inventario').innerHTML = items.map(i =>
       `<tr>
@@ -617,6 +672,7 @@ function cargarInventario(page, pageSize) {
         <td>${i.costo_unitario != null ? '$' + Number(i.costo_unitario).toFixed(2) : ''}</td>
       </tr>`
     ).join('');
+    renderPagination('inventario');
   });
 }
 
@@ -642,7 +698,7 @@ function subirInventario() {
   if (nomCol) fd.append('columna_nombre', nomCol);
   if (cantCol) fd.append('columna_cantidad', cantCol);
   if (costCol) fd.append('columna_costo', costCol);
-  api('/produccion/cargar-inventario', {method:'POST', body:fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarInventario(); });
+  api('/produccion/cargar-inventario', {method:'POST', body:fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.inventario.page = 1; PAG.inventario.q = ''; document.getElementById('search-inventario').value = ''; cargarInventario(); });
 }
 
 // --- EXPLOSION ---
@@ -746,14 +802,15 @@ function cargarSugerenciasCompra() {
 }
 
 // --- LOTES ---
-function cargarLotes(page, pageSize) {
-  page = page || 1; pageSize = pageSize || 50;
+function cargarLotes() {
+  const s = PAG.lotes;
   const el = document.getElementById('loading-lotes'); if (el) el.style.display = 'block';
   document.getElementById('tabla-lotes').style.display = 'none';
-  api(`/lotes?page=${page}&page_size=${pageSize}`).then(data => {
+  api(`/lotes?page=${s.page}&page_size=${s.pageSize}${s.q ? `&q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (el) el.style.display = 'none';
     const items = data.items || data;
-    if (!items.length) { if (el) el.textContent = 'No hay lotes registrados.'; return; }
+    s.total = data.total || items.length;
+    if (!items.length) { if (el) el.textContent = 'No hay lotes registrados.'; document.getElementById('pag-lotes').innerHTML = ''; return; }
     document.getElementById('tabla-lotes').style.display = '';
     const esAdmin = USUARIO.rol === 'admin';
     document.getElementById('tbody-lotes').innerHTML = items.map(l =>
@@ -771,12 +828,13 @@ function cargarLotes(page, pageSize) {
         </td>
       </tr>`
     ).join('');
+    renderPagination('lotes');
   });
 }
 
 function cambiarEstadoLote(id, estado) {
   const fd = new FormData(); fd.append('estado', estado);
-  api(`/lotes/${id}/estado`, {method:'PUT', body: fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarLotes(); });
+  api(`/lotes/${id}/estado`, {method:'PUT', body: fd}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.lotes.page = 1; cargarLotes(); });
 }
 
 function trazarLote() {
@@ -799,31 +857,34 @@ function trazarLote() {
 }
 
 // --- AUDITORIA ---
-function cargarAuditoria(page, pageSize) {
-  page = page || 1; pageSize = pageSize || 50;
+function cargarAuditoria() {
+  const s = PAG.auditoria;
   const el = document.getElementById('loading-auditoria'); if (el) el.style.display = 'block';
   document.getElementById('tabla-auditoria').style.display = 'none';
-  api(`/produccion/auditoria?page=${page}&page_size=${pageSize}`).then(data => {
+  api(`/produccion/auditoria?page=${s.page}&page_size=${s.pageSize}${s.q ? `&q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (el) el.style.display = 'none';
     const items = data.items || data;
-    if (!items.length) { if (el) el.textContent = 'No hay registros.'; return; }
+    s.total = data.total || items.length;
+    if (!items.length) { if (el) el.textContent = 'No hay registros.'; document.getElementById('pag-auditoria').innerHTML = ''; return; }
     document.getElementById('tabla-auditoria').style.display = '';
     document.getElementById('tbody-auditoria').innerHTML = items.map(r =>
       `<tr><td>${r.id}</td><td>${r.entidad}</td><td><span class="badge ${r.accion==='ELIMINAR'?'fail':'ok'}">${r.accion}</span></td><td>${r.detalle}</td><td style="font-size:0.8rem">${r.usuario||'-'}</td><td style="font-size:0.8rem">${r.creado_en ? new Date(r.creado_en).toLocaleString() : '-'}</td></tr>`
     ).join('');
+    renderPagination('auditoria');
   });
 }
 
 // --- USUARIOS ---
 // --- ORDENES ---
-function cargarOrdenes(page, pageSize) {
-  page = page || 1; pageSize = pageSize || 50;
+function cargarOrdenes() {
+  const s = PAG.ordenes;
   const el = document.getElementById('loading-ordenes'); if (el) el.style.display = 'block';
   document.getElementById('tabla-ordenes').style.display = 'none';
-  api(`/ordenes?page=${page}&page_size=${pageSize}`).then(data => {
+  api(`/ordenes?page=${s.page}&page_size=${s.pageSize}${s.q ? `&q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (el) el.style.display = 'none';
     const items = data.items || data;
-    if (!items.length) { if (el) el.textContent = 'No hay órdenes registradas.'; return; }
+    s.total = data.total || items.length;
+    if (!items.length) { if (el) el.textContent = 'No hay órdenes registradas.'; document.getElementById('pag-ordenes').innerHTML = ''; return; }
     document.getElementById('tabla-ordenes').style.display = '';
     const esAdmin = USUARIO.rol === 'admin';
     document.getElementById('th-acciones-orden').classList.toggle('hidden', !esAdmin);
@@ -848,9 +909,10 @@ function cargarOrdenes(page, pageSize) {
         <td style="font-size:0.8rem">${o.usuario || '-'}</td>
         <td style="font-size:0.8rem">${o.creado_en ? new Date(o.creado_en).toLocaleString() : '-'}</td>
         <td style="font-size:0.8rem"><a href="#" onclick="verDetalleOrden('${o.id}')">${o.cantidad_componentes || 'Ver'}</a></td>
-        <td style="white-space:nowrap">${acciones || '-'}</td>
-      </tr>`;
+      <td style="white-space:nowrap">${acciones || '-'}</td>
+    </tr>`;
     }).join('');
+    renderPagination('ordenes');
   });
 }
 
@@ -895,26 +957,29 @@ function crearControl(idOrden) {
 
 function iniciarOrden(id) {
   if (!confirm(`Iniciar producción de orden ${id.slice(0,8)}…?`)) return;
-  api(`/ordenes/${id}/iniciar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+  api(`/ordenes/${id}/iniciar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.ordenes.page = 1; cargarOrdenes(); });
 }
 
 function completarOrden(id) {
   if (!confirm(`Completar orden ${id.slice(0,8)}…? Esto consumirá materiales del inventario.`)) return;
-  api(`/ordenes/${id}/completar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+  api(`/ordenes/${id}/completar`, {method:'POST'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.ordenes.page = 1; cargarOrdenes(); });
 }
 
 function eliminarOrden(id) {
   if (!confirm(`Eliminar orden ${id.slice(0,8)}…?`)) return;
-  api(`/ordenes/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarOrdenes(); });
+  api(`/ordenes/${id}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.ordenes.page = 1; cargarOrdenes(); });
 }
 
 function cargarUsuarios() {
-  api('/usuarios').then(data => {
+  const s = PAG.usuarios;
+  api(`/usuarios${s.q ? `?q=${encodeURIComponent(s.q)}` : ''}`).then(data => {
     if (!Array.isArray(data)) return;
+    s.total = data.length;
     document.getElementById('tbody-usuarios').innerHTML = data.map(u =>
       `<tr><td>${u.username}</td><td>${u.nombre}</td><td><span class="rol-badge" style="background:#e8eaf6;color:#1a237e;text-transform:uppercase">${u.rol}</span></td><td>${u.activo ? '✅' : '❌'}</td><td style="font-size:0.8rem">${u.creado_en ? new Date(u.creado_en).toLocaleDateString() : '-'}</td>` +
       `<td style="display:flex;gap:0.3rem">${u.username !== 'admin' ? `<button class="danger" onclick="eliminarUsuario('${u.username}')" style="font-size:0.8rem">Desactivar</button>` : ''}</td></tr>`
     ).join('');
+    renderPagination('usuarios');
   });
 }
 
@@ -938,12 +1003,12 @@ function guardarUsuario() {
   const editUsername = document.getElementById('usuario-edit-username').value;
   (editUsername ? api(`/usuarios/${editUsername}`, {method:'PUT', body: JSON.stringify({username, nombre, password, rol})})
                 : api('/usuarios', {method:'POST', body: JSON.stringify({username, nombre, password, rol})}))
-    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-usuario'); cargarUsuarios(); });
+    .then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cerrarModal('modal-usuario'); PAG.usuarios.page = 1; cargarUsuarios(); });
 }
 
 function eliminarUsuario(username) {
   if (!confirm(`Desactivar usuario ${username}?`)) return;
-  api(`/usuarios/${username}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); cargarUsuarios(); });
+  api(`/usuarios/${username}`, {method:'DELETE'}).then(d => { toast(d.mensaje || d.error, d.error ? 'error' : 'success'); PAG.usuarios.page = 1; cargarUsuarios(); });
 }
 
 function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }

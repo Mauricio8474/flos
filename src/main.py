@@ -248,8 +248,8 @@ def auth_me(usuario: dict = Depends(obtener_usuario_actual)) -> dict:
 # Usuarios (solo admin)
 # ---------------------------------------------------------------------------
 @app.get("/usuarios", dependencies=[Depends(requerir_rol("admin"))])
-def listar_usuarios() -> list[dict]:
-    return _repo_usuarios().listar()
+def listar_usuarios(q: str = "") -> list[dict]:
+    return _repo_usuarios().listar(q)
 
 
 @app.post("/usuarios", dependencies=[Depends(requerir_rol("admin"))])
@@ -286,8 +286,8 @@ def eliminar_usuario(username: str) -> dict:
 # Fórmulas
 # ---------------------------------------------------------------------------
 @app.get("/produccion/formulas", dependencies=[Depends(obtener_usuario_actual)])
-def listar_formulas(page: int = 0, page_size: int = 0) -> dict:
-    todas, total = _repo_formula().listar(page, page_size)
+def listar_formulas(page: int = 0, page_size: int = 0, q: str = "") -> dict:
+    todas, total = _repo_formula().listar(page, page_size, q)
     items = [{"id": ref, "nombre": f.nombre, "componentes": [{"sku": c.sku, "porcentaje": c.porcentaje} for c in f.componentes]} for ref, f in sorted(todas.items())]
     if not page:
         page = 1
@@ -417,8 +417,8 @@ def cargar_inventario(
 
 
 @app.get("/produccion/inventario", dependencies=[Depends(obtener_usuario_actual)])
-def obtener_inventario(page: int = 0, page_size: int = 0) -> dict:
-    items, total = _repo_inventario().obtener_todos(page, page_size)
+def obtener_inventario(page: int = 0, page_size: int = 0, q: str = "") -> dict:
+    items, total = _repo_inventario().obtener_todos(page, page_size, q)
     data = [
         {
             "sku": i.sku,
@@ -463,8 +463,8 @@ def listar_sugerencias_compra() -> dict:
 # Auditoría
 # ---------------------------------------------------------------------------
 @app.get("/produccion/auditoria", dependencies=[Depends(requerir_rol("admin"))])
-def listar_auditoria(page: int = 0, page_size: int = 0) -> dict:
-    items, total = _repo_auditoria().listar(page, page_size)
+def listar_auditoria(page: int = 0, page_size: int = 0, q: str = "") -> dict:
+    items, total = _repo_auditoria().listar(page, page_size, q)
     if not page:
         page = 1
         page_size = total if total > 0 else 1
@@ -605,8 +605,8 @@ def calcular_explosion_pdf(id_formula: str = Form(...), cantidad_a_producir_kg: 
 # Órdenes de producción
 # ---------------------------------------------------------------------------
 @app.get("/ordenes", dependencies=[Depends(obtener_usuario_actual)])
-def listar_ordenes(page: int = 0, page_size: int = 0) -> dict:
-    items, total = _repo_ordenes().listar(page, page_size)
+def listar_ordenes(page: int = 0, page_size: int = 0, q: str = "") -> dict:
+    items, total = _repo_ordenes().listar(page, page_size, q)
     if not page:
         page = 1
         page_size = total if total > 0 else 1
@@ -681,8 +681,8 @@ def actualizar_resultado_control(id_control: str, resultado: str = Form(...), ob
 # Lotes / Trazabilidad
 # ---------------------------------------------------------------------------
 @app.get("/lotes", dependencies=[Depends(obtener_usuario_actual)])
-def listar_lotes(page: int = 0, page_size: int = 0) -> dict:
-    items, total = _repo_lotes().listar(page, page_size)
+def listar_lotes(page: int = 0, page_size: int = 0, q: str = "") -> dict:
+    items, total = _repo_lotes().listar(page, page_size, q)
     if not page:
         page = 1
         page_size = total if total > 0 else 1

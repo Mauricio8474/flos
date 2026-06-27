@@ -35,7 +35,7 @@ class RepositorioFormula(ABC):
         ...
 
     @abstractmethod
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[dict[str, Formula], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[dict[str, Formula], int]:
         ...
 
     @abstractmethod
@@ -49,7 +49,7 @@ class RepositorioInventario(ABC):
         ...
 
     @abstractmethod
-    def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
+    def obtener_todos(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[ItemInventario], int]:
         ...
 
     @abstractmethod
@@ -75,7 +75,7 @@ class RepositorioUsuario(ABC):
         ...
 
     @abstractmethod
-    def listar(self) -> list[dict]:
+    def listar(self, q: str = "") -> list[dict]:
         ...
 
     @abstractmethod
@@ -89,7 +89,7 @@ class RepositorioAuditoria(ABC):
         ...
 
     @abstractmethod
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         ...
 
 
@@ -99,7 +99,7 @@ class RepositorioOrdenes(ABC):
         ...
 
     @abstractmethod
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         ...
 
     @abstractmethod
@@ -143,7 +143,7 @@ class RepositorioLotes(ABC):
         ...
 
     @abstractmethod
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         ...
 
     @abstractmethod

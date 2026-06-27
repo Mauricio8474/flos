@@ -1,6 +1,6 @@
 ﻿from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, func
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, func, or_
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from src.application.use_cases import (
@@ -128,9 +128,12 @@ class PostgresRepositorioFormula(RepositorioFormula):
                 ),
             )
 
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[dict[str, Formula], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[dict[str, Formula], int]:
         with self._sf() as session:
             query = session.query(FormulaORM)
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(FormulaORM.id_formula.ilike(like), FormulaORM.nombre.ilike(like)))
             total = query.count()
 
             if page > 0 and page_size > 0:
@@ -201,11 +204,19 @@ class PostgresRepositorioUsuario(RepositorioUsuario):
                 return None
             return {"id": u.id, "username": u.username, "password_hash": u.password_hash, "rol": u.rol, "nombre": u.nombre, "activo": u.activo}
 
-    def listar(self) -> list[dict]:
+    def listar(self, q: str = "") -> list[dict]:
         with self._sf() as session:
+            query = session.query(UsuarioORM).order_by(UsuarioORM.id)
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(
+                    UsuarioORM.username.ilike(like),
+                    UsuarioORM.nombre.ilike(like),
+                    UsuarioORM.rol.ilike(like),
+                ))
             return [
                 {"id": u.id, "username": u.username, "rol": u.rol, "nombre": u.nombre, "activo": bool(u.activo), "creado_en": u.creado_en.isoformat() if u.creado_en else None}
-                for u in session.query(UsuarioORM).order_by(UsuarioORM.id).all()
+                for u in query.all()
             ]
 
     def existe_admin(self) -> bool:
@@ -239,9 +250,18 @@ class PostgresRepositorioAuditoria(RepositorioAuditoria):
             )
             session.commit()
 
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         with self._sf() as session:
             query = session.query(AuditoriaORM).order_by(AuditoriaORM.id.desc())
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(
+                    AuditoriaORM.entidad.ilike(like),
+                    AuditoriaORM.entidad_id.ilike(like),
+                    AuditoriaORM.accion.ilike(like),
+                    AuditoriaORM.detalle.ilike(like),
+                    AuditoriaORM.usuario.ilike(like),
+                ))
             total = query.count()
             if page > 0 and page_size > 0:
                 rows = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -279,9 +299,12 @@ class PostgresRepositorioInventario(RepositorioInventario):
                 )
             session.commit()
 
-    def obtener_todos(self, page: int = 0, page_size: int = 0) -> tuple[list[ItemInventario], int]:
+    def obtener_todos(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[ItemInventario], int]:
         with self._sf() as session:
             query = session.query(InventarioORM).order_by(InventarioORM.sku)
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(InventarioORM.sku.ilike(like), InventarioORM.nombre.ilike(like)))
             total = query.count()
             if page > 0 and page_size > 0:
                 rows = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -386,9 +409,17 @@ class PostgresRepositorioOrdenes(RepositorioOrdenes):
                 )
             session.commit()
 
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         with self._sf() as session:
             query = session.query(OrdenProduccionORM).order_by(OrdenProduccionORM.creado_en.desc())
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(
+                    OrdenProduccionORM.id.ilike(like),
+                    OrdenProduccionORM.id_formula.ilike(like),
+                    OrdenProduccionORM.nombre_formula.ilike(like),
+                    OrdenProduccionORM.usuario.ilike(like),
+                ))
             total = query.count()
             if page > 0 and page_size > 0:
                 rows = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -585,9 +616,16 @@ class PostgresRepositorioLotes(RepositorioLotes):
             ))
             session.commit()
 
-    def listar(self, page: int = 0, page_size: int = 0) -> tuple[list[dict], int]:
+    def listar(self, page: int = 0, page_size: int = 0, q: str = "") -> tuple[list[dict], int]:
         with self._sf() as session:
             query = session.query(LoteProduccionORM).order_by(LoteProduccionORM.creado_en.desc())
+            if q:
+                like = f"%{q}%"
+                query = query.filter(or_(
+                    LoteProduccionORM.codigo_lote.ilike(like),
+                    LoteProduccionORM.nombre_formula.ilike(like),
+                    LoteProduccionORM.id_orden.ilike(like),
+                ))
             total = query.count()
             if page > 0 and page_size > 0:
                 rows = query.offset((page - 1) * page_size).limit(page_size).all()
